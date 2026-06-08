@@ -74,6 +74,15 @@ export function ZktecoFingerprintPage() {
     () => status.devices.filter((device) => deviceHealth(device).state === "online").length,
     [status.devices]
   );
+  const devicesByIp = useMemo(() => {
+    const map = new Map<string, ZktecoDevice>();
+    status.devices.forEach((device) => {
+      if (device.last_ip) {
+        map.set(device.last_ip, device);
+      }
+    });
+    return map;
+  }, [status.devices]);
   const matchedEvents = useMemo(
     () => events.filter((event) => event.match_status === "matched").length,
     [events]
@@ -206,15 +215,27 @@ export function ZktecoFingerprintPage() {
                 </tr>
               </thead>
               <tbody>
-                {EXPECTED_TERMINAL_IPS.map((ip) => (
-                  <tr key={ip}>
-                    <td className="ops-monospace">{ip}</td>
-                    <td>
-                      <StatusBadge label="Waiting for ADMS" tone="neutral" />
-                    </td>
-                    <td>Set Cloud Server / ADMS to this backend and make one fingerprint punch.</td>
-                  </tr>
-                ))}
+                {EXPECTED_TERMINAL_IPS.map((ip) => {
+                  const device = devicesByIp.get(ip);
+                  const health = device ? deviceHealth(device) : null;
+
+                  return (
+                    <tr key={ip}>
+                      <td className="ops-monospace">{ip}</td>
+                      <td>
+                        <StatusBadge
+                          label={health ? health.label : "Waiting for ADMS"}
+                          tone={health ? health.tone : "neutral"}
+                        />
+                      </td>
+                      <td>
+                        {device
+                          ? `Last seen ${formatDateTime(device.last_seen_at || undefined)}`
+                          : "Set Cloud Server / ADMS to this backend and make one fingerprint punch."}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

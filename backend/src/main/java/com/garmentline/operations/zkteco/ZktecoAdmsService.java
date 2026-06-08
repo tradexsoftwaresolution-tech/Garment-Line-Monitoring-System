@@ -124,6 +124,7 @@ public class ZktecoAdmsService {
   }
 
   public int receiveBridgePunches(List<Map<String, Object>> punches) {
+    processBridgeHeartbeats(punches);
     List<ZktecoAttendanceLog> logs =
         punches == null
             ? List.of()
@@ -131,6 +132,10 @@ public class ZktecoAdmsService {
     if (logs.isEmpty()) {
       return 0;
     }
+
+    logs.stream()
+        .collect(java.util.stream.Collectors.groupingBy(ZktecoAttendanceLog::deviceSerialNo))
+        .forEach(this::touchBridgeDevice);
 
     Set<String> existingEventUids = existingEventUids(logs);
     List<ZktecoAttendanceLog> newLogs =
@@ -457,6 +462,48 @@ public class ZktecoAdmsService {
     } catch (RuntimeException ignored) {
       // Optional device metadata should not block event ingestion.
     }
+  }
+
+  private void processBridgeHeartbeats(List<Map<String, Object>> punches) {
+    if (punches == null || punches.isEmpty()) {
+      return;
+    }
+
+    punches.stream()
+        .filter(this::isBridgeHeartbeat)
+        .forEach(
+            punch -> {
+              String deviceIp = firstNonBlank(text(punch, "deviceIp"), text(punch, "deviceIP"));
+              String serialNo =
+                  firstNonBlank(text(punch, "deviceId"), text(punch, "serialNo"), deviceIp, "unknown");
+              touchBridgeDevice(serialNo, deviceIp, "BRIDGE_HEARTBEAT");
+            });
+  }
+
+  private boolean isBridgeHeartbeat(Map<String, Object> punch) {
+    if (punch == null || punch.isEmpty()) {
+      return false;
+    }
+    Object value = punch.get("bridgeHeartbeat");
+    return value instanceof Boolean booleanValue
+        ? booleanValue
+        : value != null && "true".equalsIgnoreCase(value.toString());
+  }
+
+  private void touchBridgeDevice(String serialNo, List<ZktecoAttendanceLog> logs) {
+    String deviceIp =
+        logs.stream()
+            .map(ZktecoAttendanceLog::deviceIp)
+            .filter(this::hasText)
+            .findFirst()
+            .orElse(null);
+    touchBridgeDevice(serialNo, deviceIp, "BRIDGE_POLL");
+  }
+
+  private void touchBridgeDevice(String serialNo, String deviceIp, String lastPushTable) {
+    MultiValueMap<String, String> query = new LinkedMultiValueMap<>();
+    query.add("DeviceName", serialNo);
+    touchDevice(serialNo, firstNonBlank(deviceIp, serialNo), lastPushTable, query);
   }
 
   private Set<String> existingEventUids(List<ZktecoAttendanceLog> logs) {

@@ -163,6 +163,16 @@ def collect_device_attendance(device_ip: str, timezone: ZoneInfo) -> tuple[str, 
     return serial, rows
 
 
+def heartbeat_punch(device_ip: str, serial: str, timezone: ZoneInfo) -> dict[str, Any]:
+    return {
+        "bridgeHeartbeat": True,
+        "deviceId": serial or device_ip,
+        "serialNo": serial or device_ip,
+        "deviceIp": device_ip,
+        "timestamp": datetime.now(tz=timezone).isoformat(),
+    }
+
+
 def post_punches(endpoint: str, token: str, payload: list[dict[str, Any]]):
     response = requests.post(
         endpoint,
@@ -206,7 +216,11 @@ def run_once(state: dict[str, Any]):
               break
 
       if not pending:
-          log(f"{device_ip}: no new punches.")
+          try:
+              post_punches(endpoint, token, [heartbeat_punch(device_ip, serial, timezone)])
+              log(f"{device_ip} ({serial}): no new punches; heartbeat posted.")
+          except Exception as exc:
+              log(f"{device_ip} ({serial}): no new punches; failed to post heartbeat: {exc}")
           continue
 
       if not can_post:
