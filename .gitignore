@@ -13,3 +13,4 @@ __pycache__/
 backend/.runtime/
 backend/.venv-zkteco/
 backend/.venv-lan-bridges/
+desktop/garmentline-lan-bridge/build/default-config.json

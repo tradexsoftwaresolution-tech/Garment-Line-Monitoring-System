@@ -226,12 +226,7 @@ def post_events(endpoint: str, token: str, payload: list[dict[str, Any]]):
 def run_once(state: dict[str, Any]):
     endpoint = backend_endpoint()
     token = os.environ.get("BRIDGE_SHARED_TOKEN", "")
-    if not endpoint:
-        log("Hikvision backend URL is empty.")
-        return
-    if not token:
-        log("Bridge token is empty.")
-        return
+    can_post = bool(endpoint and token)
 
     timezone = ZoneInfo(os.environ.get("BRIDGE_TIME_ZONE", "Asia/Colombo"))
     batch_size = max(1, env_int("HIKVISION_MAX_RESULTS", 30))
@@ -248,6 +243,11 @@ def run_once(state: dict[str, Any]):
         pending = [event for event in events if event["id"] not in sent_keys][:batch_size]
         if not pending:
             log(f"{camera_url}: no new face events.")
+            continue
+
+        if not can_post:
+            reason = "backend URL is empty" if not endpoint else "bridge token is empty"
+            log(f"{camera_url}: read {len(pending)} face events; backend {reason}.")
             continue
 
         try:

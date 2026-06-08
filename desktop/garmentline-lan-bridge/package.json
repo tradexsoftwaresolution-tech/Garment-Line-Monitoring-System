@@ -8,10 +8,11 @@
   "copyright": "Copyright (c) 2026 Tradex Innovations Team. All rights reserved.",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder --mac dir",
-    "build:mac": "electron-builder --mac dir",
-    "build:win": "electron-builder --win nsis --x64",
-    "dist": "electron-builder"
+    "generate:config": "node scripts/generate-default-config.js",
+    "build": "npm run generate:config && electron-builder --mac dir",
+    "build:mac": "npm run generate:config && electron-builder --mac dir",
+    "build:win": "npm run generate:config && electron-builder --win nsis --x64",
+    "dist": "npm run generate:config && electron-builder"
   },
   "devDependencies": {
     "electron": "^39.2.7",
@@ -31,6 +32,7 @@
       "build/icon.png",
       "build/icon.ico",
       "build/icon.icns",
+      "build/default-config.json",
       "package.json"
     ],
     "extraResources": [

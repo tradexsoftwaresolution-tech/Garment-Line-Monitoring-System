@@ -78,6 +78,51 @@ function formConfig() {
   };
 }
 
+function hasText(value) {
+  return String(value || "").trim().length > 0;
+}
+
+function readableError(error) {
+  const message = error?.message || String(error);
+  return message.replace(/^Error invoking remote method '[^']+': Error: /, "");
+}
+
+function validateUrl(value) {
+  try {
+    return Boolean(new URL(value));
+  } catch (_error) {
+    return false;
+  }
+}
+
+function validateStartConfig(kind, config) {
+  const errors = [];
+  const wantsZkteco = kind === "zkteco" || (kind === "all" && config.zkteco.enabled);
+  const wantsHikvision = kind === "hikvision" || (kind === "all" && config.hikvision.enabled);
+
+  if (hasText(config.backendUrl) && !validateUrl(config.backendUrl)) {
+    errors.push("Backend URL must be a full URL, for example http://localhost:8080 or https://your-backend.onrender.com.");
+  }
+  if (wantsZkteco && !hasText(config.zkteco.deviceIps)) {
+    errors.push("At least one ZKTeco device IP is required.");
+  }
+  if (wantsHikvision) {
+    if (!hasText(config.hikvision.cameraUrls)) {
+      errors.push("At least one Hikvision camera URL is required.");
+    }
+    if (!hasText(config.hikvision.username)) {
+      errors.push("Hikvision username is required.");
+    }
+    if (!hasText(config.hikvision.password)) {
+      errors.push("Hikvision password is required.");
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new Error(errors.join(" "));
+  }
+}
+
 function fillForm(config) {
   fields.backendUrl.value = config.backendUrl || "";
   fields.bridgeToken.value = config.bridgeToken || "";
@@ -247,7 +292,7 @@ async function runAction(button, workingLabel, action) {
     updateStatus(await window.bridgeApp.status());
     return result;
   } catch (error) {
-    appendLog({ source: "app", message: error.message || String(error) });
+    appendLog({ source: "app", message: readableError(error) });
   } finally {
     setBusy(button, false, original);
   }
@@ -272,7 +317,11 @@ buttons.testBackend.addEventListener("click", () => {
 });
 
 buttons.startAll.addEventListener("click", () => {
-  void runAction(buttons.startAll, "Starting", () => window.bridgeApp.startAll(formConfig()));
+  void runAction(buttons.startAll, "Starting", () => {
+    const config = formConfig();
+    validateStartConfig("all", config);
+    return window.bridgeApp.startAll(config);
+  });
 });
 
 buttons.stopAll.addEventListener("click", () => {
@@ -280,7 +329,11 @@ buttons.stopAll.addEventListener("click", () => {
 });
 
 buttons.startZkteco.addEventListener("click", () => {
-  void runAction(buttons.startZkteco, "Starting", () => window.bridgeApp.start("zkteco", formConfig()));
+  void runAction(buttons.startZkteco, "Starting", () => {
+    const config = formConfig();
+    validateStartConfig("zkteco", config);
+    return window.bridgeApp.start("zkteco", config);
+  });
 });
 
 buttons.stopZkteco.addEventListener("click", () => {
@@ -288,7 +341,11 @@ buttons.stopZkteco.addEventListener("click", () => {
 });
 
 buttons.startHikvision.addEventListener("click", () => {
-  void runAction(buttons.startHikvision, "Starting", () => window.bridgeApp.start("hikvision", formConfig()));
+  void runAction(buttons.startHikvision, "Starting", () => {
+    const config = formConfig();
+    validateStartConfig("hikvision", config);
+    return window.bridgeApp.start("hikvision", config);
+  });
 });
 
 buttons.stopHikvision.addEventListener("click", () => {

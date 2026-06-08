@@ -177,12 +177,7 @@ def post_punches(endpoint: str, token: str, payload: list[dict[str, Any]]):
 def run_once(state: dict[str, Any]):
     endpoint = backend_endpoint()
     token = os.environ.get("BRIDGE_SHARED_TOKEN", "")
-    if not endpoint:
-        log("ZKTeco backend URL is empty.")
-        return
-    if not token:
-        log("Bridge token is empty.")
-        return
+    can_post = bool(endpoint and token)
 
     timezone = ZoneInfo(os.environ.get("BRIDGE_TIME_ZONE", "Asia/Colombo"))
     lookback_hours = env_int("ZKTECO_LOOKBACK_HOURS", 24)
@@ -214,10 +209,15 @@ def run_once(state: dict[str, Any]):
           log(f"{device_ip}: no new punches.")
           continue
 
+      if not can_post:
+          reason = "backend URL is empty" if not endpoint else "bridge token is empty"
+          log(f"{device_ip} ({serial}): read {len(pending)} punches; backend {reason}.")
+          continue
+
       try:
           result = post_punches(endpoint, token, pending)
       except Exception as exc:
-          log(f"{device_ip}: failed to post {len(pending)} punches: {exc}")
+          log(f"{device_ip} ({serial}): failed to post {len(pending)} punches: {exc}")
           continue
 
       next_sent_keys.extend(pending_keys)

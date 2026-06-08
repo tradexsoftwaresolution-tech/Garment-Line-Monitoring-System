@@ -3,6 +3,32 @@ const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
+function firstEnv(...names) {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
+function hasText(value) {
+  return String(value || "").trim().length > 0;
+}
+
+function isLocalBackendUrl(value) {
+  if (!hasText(value)) {
+    return true;
+  }
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  } catch (_error) {
+    return true;
+  }
+}
+
 const bridgeProcesses = new Map();
 const machineHealth = {
   zkteco: new Map(),
@@ -17,9 +43,9 @@ if (!singleInstanceLock) {
   app.quit();
 }
 
-const defaultConfig = {
-  backendUrl: "http://localhost:8080",
-  bridgeToken: "",
+const builtInConfig = {
+  backendUrl: firstEnv("GARMENTLINE_BRIDGE_BACKEND_URL", "VITE_BACKEND_URL") || "http://localhost:8080",
+  bridgeToken: firstEnv("GARMENTLINE_BRIDGE_TOKEN", "BRIDGE_SHARED_TOKEN", "HIKVISION_BRIDGE_TOKEN"),
   autoStart: false,
   zkteco: {
     enabled: true,
@@ -35,7 +61,7 @@ const defaultConfig = {
     enabled: true,
     cameraUrls: "http://10.10.4.101,http://10.10.4.102,http://10.10.4.103,http://10.10.4.104,http://10.10.4.105,http://10.10.4.106,http://10.10.4.107",
     username: "admin",
-    password: "",
+    password: firstEnv("GARMENTLINE_HIKVISION_PASSWORD", "HIKVISION_PASSWORD"),
     intervalSeconds: 5,
     lookbackMinutes: 60,
     maxResults: 30,
@@ -119,6 +145,61 @@ function configPath() {
   return userDataPath("bridge-config.json");
 }
 
+function packagedDefaultConfigPaths() {
+  const paths = [path.join(__dirname, "..", "build", "default-config.json")];
+  if (app.isPackaged) {
+    paths.unshift(
+      path.join(process.resourcesPath, "app.asar", "build", "default-config.json"),
+      path.join(process.resourcesPath, "build", "default-config.json")
+    );
+  }
+  return paths;
+}
+
+function loadPackagedDefaultConfig() {
+  for (const candidate of packagedDefaultConfigPaths()) {
+    try {
+      if (fs.existsSync(candidate)) {
+        return JSON.parse(fs.readFileSync(candidate, "utf8"));
+      }
+    } catch (error) {
+      emitLog("app", `Could not read packaged defaults: ${error.message}`);
+    }
+  }
+  return {};
+}
+
+function effectiveDefaultConfig() {
+  return mergeConfig(builtInConfig, loadPackagedDefaultConfig());
+}
+
+function repairConfigWithPackagedDefaults(config) {
+  const packaged = loadPackagedDefaultConfig();
+  const repaired = structuredClone(config);
+  let changed = false;
+
+  if (
+    app.isPackaged &&
+    hasText(packaged.backendUrl) &&
+    !isLocalBackendUrl(packaged.backendUrl) &&
+    isLocalBackendUrl(repaired.backendUrl)
+  ) {
+    repaired.backendUrl = packaged.backendUrl;
+    changed = true;
+  }
+  if (hasText(packaged.bridgeToken) && !hasText(repaired.bridgeToken)) {
+    repaired.bridgeToken = packaged.bridgeToken;
+    changed = true;
+  }
+  if (hasText(packaged.hikvision?.password) && !hasText(repaired.hikvision?.password)) {
+    repaired.hikvision = repaired.hikvision || {};
+    repaired.hikvision.password = packaged.hikvision.password;
+    changed = true;
+  }
+
+  return { config: repaired, changed };
+}
+
 function stateDir() {
   const dir = userDataPath("state");
   fs.mkdirSync(dir, { recursive: true });
@@ -146,18 +227,22 @@ function pythonExecutable() {
 function loadConfig() {
   try {
     if (!fs.existsSync(configPath())) {
-      return structuredClone(defaultConfig);
+      return effectiveDefaultConfig();
     }
     const raw = JSON.parse(fs.readFileSync(configPath(), "utf8"));
-    return mergeConfig(defaultConfig, raw);
+    const repaired = repairConfigWithPackagedDefaults(mergeConfig(effectiveDefaultConfig(), raw));
+    if (repaired.changed) {
+      fs.writeFileSync(configPath(), JSON.stringify(repaired.config, null, 2));
+    }
+    return repaired.config;
   } catch (error) {
     emitLog("app", `Could not read config: ${error.message}`);
-    return structuredClone(defaultConfig);
+    return effectiveDefaultConfig();
   }
 }
 
 function saveConfig(config) {
-  const nextConfig = mergeConfig(defaultConfig, config || {});
+  const nextConfig = mergeConfig(effectiveDefaultConfig(), config || {});
   fs.mkdirSync(path.dirname(configPath()), { recursive: true });
   fs.writeFileSync(configPath(), JSON.stringify(nextConfig, null, 2));
   applyAutoStart(nextConfig.autoStart);
@@ -342,8 +427,11 @@ function parseMachineLog(kind, line) {
     if (message.startsWith("failed to read attendance:")) {
       return { id: match[1], serial: match[2], state: "error", message };
     }
-    if (message.startsWith("failed to post ")) {
-      return { id: match[1], serial: match[2], state: "warning", message };
+    if (
+      message.startsWith("failed to post ") ||
+      /^read \d+ punches; backend/.test(message)
+    ) {
+      return { id: match[1], serial: match[2], state: "online", message };
     }
     if (message === "no new punches." || message.startsWith("posted ")) {
       return { id: match[1], serial: match[2], state: "online", message };
@@ -352,17 +440,20 @@ function parseMachineLog(kind, line) {
   }
 
   const match = String(line).match(
-    /^(.*?): (failed to fetch events: .+|no new face events\.|failed to post \d+ events: .+|posted \d+ face events\.)$/
+    /^(.*?): (failed to fetch events: .+|no new face events\.|failed to post \d+ events: .+|posted \d+ face events\.|read \d+ face events; backend .+)$/
   );
   if (!match) {
     return null;
   }
   const message = match[2];
   if (message.startsWith("failed to fetch events:")) {
+    if (/401|403|Unauthorized|Forbidden/i.test(message)) {
+      return { id: match[1], state: "warning", message };
+    }
     return { id: match[1], state: "error", message };
   }
-  if (message.startsWith("failed to post ")) {
-    return { id: match[1], state: "warning", message };
+  if (message.startsWith("failed to post ") || message.startsWith("read ")) {
+    return { id: match[1], state: "online", message };
   }
   if (message === "no new face events." || message.startsWith("posted ")) {
     return { id: match[1], state: "online", message };
@@ -507,15 +598,48 @@ async function installDependencies() {
 }
 
 function bridgeHealthUrl(backendUrl) {
-  return new URL("/api/bridge/health", backendUrl.endsWith("/") ? backendUrl : `${backendUrl}/`).toString();
+  const trimmed = String(backendUrl || "").trim();
+  if (!trimmed) {
+    throw new Error("Backend URL is required.");
+  }
+  try {
+    return new URL("/api/bridge/health", trimmed.endsWith("/") ? trimmed : `${trimmed}/`).toString();
+  } catch (_error) {
+    throw new Error(`Backend URL is invalid: ${trimmed}`);
+  }
+}
+
+async function assertBackendReachable(config) {
+  const url = bridgeHealthUrl(config.backendUrl);
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        "X-Bridge-Token": config.bridgeToken || ""
+      }
+    });
+  } catch (error) {
+    throw new Error(
+      `Could not reach backend at ${url}: ${error.message}. Start the Spring backend on this PC or enter the deployed backend URL.`
+    );
+  }
+
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`Backend returned ${response.status}: ${text}`);
+  }
+  return text;
 }
 
 ipcMain.handle("config:get", () => loadConfig());
 ipcMain.handle("config:save", (_event, config) => saveConfig(config));
 ipcMain.handle("bridge:status", () => statusPayload());
-ipcMain.handle("bridge:start", (_event, kind, config) => startBridge(kind, config));
+ipcMain.handle("bridge:start", async (_event, kind, config) => {
+  const saved = saveConfig(config || loadConfig());
+  return startBridge(kind, saved);
+});
 ipcMain.handle("bridge:stop", (_event, kind) => stopBridge(kind));
-ipcMain.handle("bridge:startAll", (_event, config) => {
+ipcMain.handle("bridge:startAll", async (_event, config) => {
   const saved = saveConfig(config);
   if (saved.zkteco.enabled) {
     startBridge("zkteco", saved);
@@ -539,15 +663,7 @@ ipcMain.handle("app:setAutoStart", (_event, enabled) => {
 ipcMain.handle("app:openUserData", () => shell.openPath(app.getPath("userData")));
 ipcMain.handle("bridge:testHealth", async (_event, configInput) => {
   const config = saveConfig(configInput || loadConfig());
-  const response = await fetch(bridgeHealthUrl(config.backendUrl), {
-    headers: {
-      "X-Bridge-Token": config.bridgeToken || ""
-    }
-  });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`Backend returned ${response.status}: ${text}`);
-  }
+  const text = await assertBackendReachable(config);
   emitLog("app", "Backend bridge health check passed.");
   return text;
 });
