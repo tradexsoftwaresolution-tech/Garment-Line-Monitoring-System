@@ -174,6 +174,17 @@ def normalize_event(camera_url: str, node: dict[str, Any], timezone: ZoneInfo) -
     }
 
 
+def heartbeat_event(camera_url: str, timezone: ZoneInfo) -> dict[str, Any]:
+    return {
+        "cameraId": camera_id(camera_url),
+        "cameraName": camera_name(camera_url),
+        "cameraLocation": None,
+        "cameraBaseUrl": camera_url,
+        "bridgeHeartbeat": True,
+        "polledAt": datetime.now(tz=timezone).isoformat(),
+    }
+
+
 def fetch_events(camera_url: str, timezone: ZoneInfo) -> list[dict[str, Any]]:
     username = os.environ.get("HIKVISION_USERNAME", "")
     password = os.environ.get("HIKVISION_PASSWORD", "")
@@ -242,7 +253,11 @@ def run_once(state: dict[str, Any]):
 
         pending = [event for event in events if event["id"] not in sent_keys][:batch_size]
         if not pending:
-            log(f"{camera_url}: no new face events.")
+            try:
+                post_events(endpoint, token, [heartbeat_event(camera_url, timezone)])
+                log(f"{camera_url}: no new face events; heartbeat posted.")
+            except Exception as exc:
+                log(f"{camera_url}: no new face events; failed to post heartbeat: {exc}")
             continue
 
         if not can_post:

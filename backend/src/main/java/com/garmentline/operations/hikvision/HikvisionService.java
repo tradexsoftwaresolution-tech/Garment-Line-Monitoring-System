@@ -255,9 +255,14 @@ public class HikvisionService {
   public HikvisionEventListResponse listEvents(AuthenticatedUser user, int limit) {
     requireAccess(user);
     int safeLimit = Math.max(1, Math.min(limit, MAX_EVENTS));
+    mergePersistedEventsIntoMemory(safeLimit);
     List<HikvisionRecognitionEvent> snapshot;
     synchronized (eventLock) {
-      snapshot = events.stream().limit(safeLimit).toList();
+      snapshot =
+          events.stream()
+              .sorted(Comparator.comparing(HikvisionRecognitionEvent::eventTime).reversed())
+              .limit(safeLimit)
+              .toList();
     }
     return new HikvisionEventListResponse(snapshot, status());
   }
@@ -384,6 +389,100 @@ public class HikvisionService {
         // The live feed should still work before the optional Supabase migration is applied.
       }
     }
+  }
+
+  private void mergePersistedEventsIntoMemory(int limit) {
+    List<HikvisionRecognitionEvent> persistedEvents = latestPersistedEvents(limit);
+    if (persistedEvents.isEmpty()) {
+      return;
+    }
+
+    synchronized (eventLock) {
+      for (HikvisionRecognitionEvent event : persistedEvents) {
+        if (seenEventIds.add(event.id())) {
+          events.add(event);
+        }
+      }
+
+      events.sort(Comparator.comparing(HikvisionRecognitionEvent::eventTime).reversed());
+      while (events.size() > MAX_EVENTS) {
+        HikvisionRecognitionEvent removed = events.removeLast();
+        seenEventIds.remove(removed.id());
+      }
+    }
+  }
+
+  private List<HikvisionRecognitionEvent> latestPersistedEvents(int limit) {
+    try {
+      MultiValueMap<String, String> query = new LinkedMultiValueMap<>();
+      query.add("select", "*");
+      query.add("order", "event_time.desc");
+      query.add("limit", String.valueOf(Math.max(1, Math.min(limit, MAX_EVENTS))));
+      ArrayNode rows = supabaseAdminClient.select("hikvision_face_events", query);
+      List<HikvisionRecognitionEvent> persistedEvents = new ArrayList<>();
+      rows.forEach(row -> persistedEvent(row).ifPresent(persistedEvents::add));
+      return persistedEvents;
+    } catch (RuntimeException ignored) {
+      return List.of();
+    }
+  }
+
+  private Optional<HikvisionRecognitionEvent> persistedEvent(JsonNode row) {
+    String id = firstNonBlank(JsonSupport.text(row, "camera_event_id"), JsonSupport.text(row, "id"));
+    if (!hasText(id)) {
+      return Optional.empty();
+    }
+
+    OffsetDateTime eventTime =
+        parseCameraTime(JsonSupport.text(row, "event_time")).orElse(OffsetDateTime.now());
+    OffsetDateTime receivedAt =
+        parseCameraTime(JsonSupport.text(row, "received_at")).orElse(eventTime);
+    String cameraId = firstNonBlank(JsonSupport.text(row, "camera_id"), "bridge-camera");
+    String cameraName =
+        firstNonBlank(
+            JsonSupport.text(row, "camera_name"),
+            JsonSupport.text(row, "camera_base_url"),
+            cameraId);
+    String matchStatus =
+        firstNonBlank(
+            JsonSupport.text(row, "match_status"),
+            hasText(JsonSupport.text(row, "employee_id")) ? "matched" : "unmatched");
+
+    return Optional.of(
+        new HikvisionRecognitionEvent(
+            id,
+            cameraId,
+            cameraName,
+            firstNonBlank(JsonSupport.text(row, "camera_location"), "Factory camera"),
+            JsonSupport.text(row, "camera_base_url"),
+            JsonSupport.text(row, "camera_serial_no"),
+            JsonSupport.text(row, "employee_code"),
+            JsonSupport.text(row, "device_person_name"),
+            JsonSupport.text(row, "employee_id"),
+            JsonSupport.text(row, "matched_employee_name"),
+            JsonSupport.text(row, "matched_department"),
+            matchStatus,
+            eventTime,
+            receivedAt,
+            JsonSupport.text(row, "verify_mode"),
+            JsonSupport.text(row, "attendance_status"),
+            JsonSupport.text(row, "access_decision"),
+            JsonSupport.text(row, "picture_url"),
+            JsonSupport.text(row, "visible_light_pic_url"),
+            JsonSupport.text(row, "thermal_pic_url"),
+            JsonSupport.decimal(row, "temperature"),
+            firstNonBlank(JsonSupport.text(row, "mask_status"), JsonSupport.text(row, "mask")),
+            JsonSupport.integer(row, "major"),
+            JsonSupport.integer(row, "minor"),
+            rawPayload(row)));
+  }
+
+  private Map<String, Object> rawPayload(JsonNode row) {
+    JsonNode rawPayload = row == null ? null : row.get("raw_payload");
+    if (rawPayload == null || rawPayload.isNull()) {
+      return Map.of();
+    }
+    return objectMapper.convertValue(rawPayload, new TypeReference<Map<String, Object>>() {});
   }
 
   private Map<String, Object> withoutCameraMetadata(Map<String, Object> row) {
