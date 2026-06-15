@@ -51,6 +51,8 @@ export function ReportsPage() {
   const totalIncentive = attendanceSummaries.reduce((sum, item) => sum + item.incentive, 0);
   const openAlerts = alerts.filter((item) => item.status !== "Resolved").length;
   const totalTransfers = transferLogs.length;
+  const faceAttendedWorkers = workers.filter((worker) => hasFaceAttendance(worker));
+  const fingerprintAttendedWorkers = workers.filter((worker) => hasFingerprintAttendance(worker));
   const lateWorkers = workers.filter((worker) => worker.attendanceStatus === "Late");
   const absentWorkers = workers.filter((worker) => worker.attendanceStatus === "Absent");
   const faceMissingWorkers = workers.filter((worker) => !hasFaceAttendance(worker));
@@ -164,7 +166,7 @@ export function ReportsPage() {
       <section className="ops-grid cols-2">
         <Card
           title="Attendance Exception Reports"
-          subtitle="Generate HR reports for late, absent, face-not-attended, fingerprint-not-attended, and missing-both employees."
+          subtitle="Generate HR reports for face-attended, fingerprint-attended, late, absent, not-attended, and missing-both employees."
           actions={
             <Button
               tone="secondary"
@@ -178,6 +180,22 @@ export function ReportsPage() {
           }
         >
           <div className="ops-grid cols-2">
+            <KpiCard
+              label="Face Attended"
+              value={`${faceAttendedWorkers.length}`}
+              meta="Workers with verified face attendance."
+              icon={ScanFace}
+              accent="var(--ops-success)"
+              soft="var(--ops-success-soft)"
+            />
+            <KpiCard
+              label="Fingerprint Attended"
+              value={`${fingerprintAttendedWorkers.length}`}
+              meta="Workers with verified fingerprint attendance."
+              icon={Fingerprint}
+              accent="var(--ops-primary)"
+              soft="var(--ops-primary-soft)"
+            />
             <KpiCard
               label="Late Employees"
               value={`${lateWorkers.length}`}

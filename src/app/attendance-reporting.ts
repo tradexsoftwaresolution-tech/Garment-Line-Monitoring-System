@@ -2,6 +2,8 @@ import type { ProductionLineRecord, WorkerProfile } from "./types";
 
 export type AttendanceReportFilter =
   | "all"
+  | "face-attended"
+  | "fingerprint-attended"
   | "late"
   | "absent"
   | "face-missing"
@@ -19,6 +21,18 @@ export const ATTENDANCE_REPORT_FILTERS: Array<{
     label: "All employees",
     filename: "attendance-verification-all.csv",
     description: "Complete attendance verification status for all employees.",
+  },
+  {
+    value: "face-attended",
+    label: "Face attended",
+    filename: "face-attended.csv",
+    description: "Employees with a verified face attendance signal.",
+  },
+  {
+    value: "fingerprint-attended",
+    label: "Fingerprint attended",
+    filename: "fingerprint-attended.csv",
+    description: "Employees with a verified fingerprint attendance signal.",
   },
   {
     value: "late",
@@ -64,6 +78,8 @@ export function matchesAttendanceReportFilter(
   worker: WorkerProfile,
   filter: AttendanceReportFilter
 ) {
+  if (filter === "face-attended") return hasFaceAttendance(worker);
+  if (filter === "fingerprint-attended") return hasFingerprintAttendance(worker);
   if (filter === "late") return worker.attendanceStatus === "Late";
   if (filter === "absent") return worker.attendanceStatus === "Absent";
   if (filter === "face-missing") return !hasFaceAttendance(worker);
