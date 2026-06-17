@@ -150,6 +150,19 @@ export function Layout() {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileOpen]);
+
   const visibleSections = useMemo(
     () =>
       navSections
@@ -186,6 +199,14 @@ export function Layout() {
             <div className="ops-brand-subtitle">Operations Centre</div>
           </div>
         </div>
+        <button
+          type="button"
+          className="ops-mobile-sidebar-close"
+          onClick={() => setMobileOpen(false)}
+          aria-label="Close navigation"
+        >
+          <X size={18} />
+        </button>
       </div>
 
       <nav className="ops-nav">
@@ -222,6 +243,31 @@ export function Layout() {
             <div className="ops-user-role">{currentUser.title}</div>
           </div>
         </div>
+        <div className="ops-mobile-sidebar-actions">
+          {!isConfigured ? (
+            <span className="ops-badge tone-warning">Supabase not configured</span>
+          ) : isAuthenticated ? (
+            <button
+              type="button"
+              className="ops-button ops-button-ghost"
+              onClick={() => {
+                setMobileOpen(false);
+                void signOut();
+              }}
+            >
+              Sign Out
+            </button>
+          ) : (
+            <>
+              <Link to="/login" className="ops-button ops-button-secondary" onClick={() => setMobileOpen(false)}>
+                Sign In
+              </Link>
+              <Link to="/sign-up" className="ops-button ops-button-ghost" onClick={() => setMobileOpen(false)}>
+                Sign Up
+              </Link>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -232,6 +278,7 @@ export function Layout() {
 
       {mobileOpen ? (
         <div
+          id="ops-mobile-navigation"
           className="ops-mobile-sidebar"
           onClick={(event) => {
             if (event.target === event.currentTarget) {
@@ -251,6 +298,8 @@ export function Layout() {
               className="ops-mobile-toggle"
               onClick={() => setMobileOpen((open) => !open)}
               aria-label="Toggle navigation"
+              aria-expanded={mobileOpen}
+              aria-controls="ops-mobile-navigation"
             >
               {mobileOpen ? <X size={16} /> : <Menu size={16} />}
             </button>
