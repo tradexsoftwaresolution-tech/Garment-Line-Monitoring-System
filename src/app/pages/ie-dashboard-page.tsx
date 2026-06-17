@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { BarChart3, CheckCircle2, Fingerprint, ScanFace, Users } from "lucide-react";
 import { useOperations, findLine } from "../operations-context";
+import { buildHikvisionFaceEventSummary } from "../face-event-counts";
 import { resolveFingerprintDeviceSummary } from "../fingerprint-device-counts";
+import { useHikvisionFaceEvents } from "../hooks/use-hikvision-face-events";
 import { useZktecoFingerprintEvents } from "../hooks/use-zkteco-fingerprint-events";
 import {
   Card,
@@ -26,6 +28,7 @@ const EMPLOYEE_PAGE_SIZE = 50;
 
 export function IeDashboardPage() {
   const { attendanceOverview, workers, lines, fingerprintDeviceSummary } = useOperations();
+  const { events: hikvisionFaceEvents } = useHikvisionFaceEvents(500);
   const { events: zktecoFingerprintEvents } = useZktecoFingerprintEvents(5000);
   const [query, setQuery] = useState("");
   const [employeePage, setEmployeePage] = useState(1);
@@ -82,11 +85,12 @@ export function IeDashboardPage() {
   const fingerprintAttended =
     resolvedFingerprintDeviceSummary.totalDevicePins || registeredFingerprintAttended + unmatchedFingerprintCount;
   const faceAttended = workers.filter((worker) => worker.faceVerificationStatus === "Verified").length;
+  const faceEventSummary = useMemo(
+    () => buildHikvisionFaceEventSummary(hikvisionFaceEvents, attendanceOverview.attendanceDate),
+    [attendanceOverview.attendanceDate, hikvisionFaceEvents]
+  );
+  const unmatchedFaceCount = faceEventSummary.unmatchedEvents;
   const overallAttended = attendanceOverview.presentWorkers + attendanceOverview.lateWorkers;
-  const lineAttendanceAverage =
-    lines.length === 0
-      ? 0
-      : Math.round(lines.reduce((sum, line) => sum + line.attendanceRate, 0) / lines.length);
 
   return (
     <div className="ops-page">
@@ -133,7 +137,7 @@ export function IeDashboardPage() {
         <KpiCard
           label="Face Attended"
           value={`${faceAttended}`}
-          meta={`Average line attendance is ${lineAttendanceAverage}%.`}
+          meta={`${faceAttended} matched workers, ${unmatchedFaceCount} unmatched face events.`}
           icon={ScanFace}
           accent="var(--ops-warning)"
           soft="var(--ops-warning-soft)"
@@ -146,6 +150,7 @@ export function IeDashboardPage() {
         actions={
           <>
             <StatusBadge label={`${unmatchedFingerprintCount} unmatched fingerprint PINs`} tone="warning" />
+            <StatusBadge label={`${unmatchedFaceCount} unmatched face events`} tone="warning" />
             <SearchField value={query} onChange={setQuery} placeholder="Search employee, line, or department" />
           </>
         }

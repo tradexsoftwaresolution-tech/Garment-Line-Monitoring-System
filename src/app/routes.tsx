@@ -12,6 +12,7 @@ import { EmployeePortalQrPage } from "./pages/employee-portal-qr-page";
 import { ImportCenterPage } from "./pages/import-center-page";
 import { HikvisionFacePage } from "./pages/hikvision-face-page";
 import { IeAnalyticsPage } from "./pages/ie-analytics-page";
+import { IeFullDashboardPage } from "./pages/ie-full-dashboard-page";
 import { IeLineAttendancePage } from "./pages/ie-line-attendance-page";
 import { IeLineFloorPlanPage } from "./pages/ie-line-floor-plan-page";
 import { LeaveManagementPage } from "./pages/leave-management-page";
@@ -72,6 +73,10 @@ export const router = createBrowserRouter(
     {
       path: "/signup",
       element: <Navigate to="/sign-up" replace />,
+    },
+    {
+      path: "/exclusive-mr.antonio",
+      element: <IeFullDashboardPage />,
     },
     {
       path: "/",
