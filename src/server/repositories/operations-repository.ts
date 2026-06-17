@@ -18,6 +18,8 @@ type ProductionLineOutputEntryRow =
   Database["public"]["Tables"]["production_line_output_entries"]["Row"];
 type FingerprintAttendanceRow =
   Database["public"]["Tables"]["fingerprint_daily_attendance"]["Row"];
+type ZktecoFingerprintEventRow =
+  Database["public"]["Tables"]["zkteco_fingerprint_events"]["Row"];
 type ReconciliationRow =
   Database["public"]["Tables"]["attendance_reconciliation"]["Row"];
 type AuditLogRow = Database["public"]["Tables"]["audit_logs"]["Row"];
@@ -456,6 +458,28 @@ export async function listFingerprintAttendanceRows(
   }
 
   return (data || []) as FingerprintAttendanceRow[];
+}
+
+export async function listZktecoFingerprintEventsForDate(
+  client: AppSupabaseClient,
+  attendanceDate: string
+) {
+  const { data, error } = await client
+    .from("zkteco_fingerprint_events")
+    .select("*")
+    .eq("attendance_date", attendanceDate)
+    .order("event_time", { ascending: true })
+    .limit(10000);
+
+  if (error) {
+    if (error.code === "42P01" || error.code === "PGRST205") {
+      return [] as ZktecoFingerprintEventRow[];
+    }
+
+    throw new Error(error.message);
+  }
+
+  return (data || []) as ZktecoFingerprintEventRow[];
 }
 
 export async function fetchLatestFingerprintAttendanceForEmployee(

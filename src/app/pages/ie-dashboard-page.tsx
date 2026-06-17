@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { BarChart3, CheckCircle2, Fingerprint, ScanFace, Users } from "lucide-react";
 import { useOperations, findLine } from "../operations-context";
+import { resolveFingerprintDeviceSummary } from "../fingerprint-device-counts";
+import { useZktecoFingerprintEvents } from "../hooks/use-zkteco-fingerprint-events";
 import {
   Card,
   KpiCard,
@@ -23,7 +25,8 @@ function verificationTone(verified: boolean) {
 const EMPLOYEE_PAGE_SIZE = 50;
 
 export function IeDashboardPage() {
-  const { attendanceOverview, workers, lines } = useOperations();
+  const { attendanceOverview, workers, lines, fingerprintDeviceSummary } = useOperations();
+  const { events: zktecoFingerprintEvents } = useZktecoFingerprintEvents(5000);
   const [query, setQuery] = useState("");
   const [employeePage, setEmployeePage] = useState(1);
 
@@ -66,9 +69,18 @@ export function IeDashboardPage() {
     setEmployeePage((current) => Math.min(current, totalEmployeePages));
   }, [totalEmployeePages]);
 
-  const fingerprintAttended = workers.filter(
+  const resolvedFingerprintDeviceSummary = useMemo(
+    () => resolveFingerprintDeviceSummary(fingerprintDeviceSummary, zktecoFingerprintEvents),
+    [fingerprintDeviceSummary, zktecoFingerprintEvents]
+  );
+  const registeredFingerprintWorkers = workers.filter(
     (worker) => worker.fingerprintVerificationStatus === "Verified"
   ).length;
+  const registeredFingerprintAttended =
+    resolvedFingerprintDeviceSummary.registeredDevicePins || registeredFingerprintWorkers;
+  const unmatchedFingerprintCount = resolvedFingerprintDeviceSummary.unregisteredDevicePins;
+  const fingerprintAttended =
+    resolvedFingerprintDeviceSummary.totalDevicePins || registeredFingerprintAttended + unmatchedFingerprintCount;
   const faceAttended = workers.filter((worker) => worker.faceVerificationStatus === "Verified").length;
   const overallAttended = attendanceOverview.presentWorkers + attendanceOverview.lateWorkers;
   const lineAttendanceAverage =
@@ -113,7 +125,7 @@ export function IeDashboardPage() {
         <KpiCard
           label="Fingerprint Attended"
           value={`${fingerprintAttended}`}
-          meta="Workers with a verified fingerprint attendance signal."
+          meta={`${registeredFingerprintAttended} registered, ${unmatchedFingerprintCount} unmatched PINs included.`}
           icon={Fingerprint}
           accent="var(--ops-violet)"
           soft="var(--ops-violet-soft)"
@@ -131,7 +143,12 @@ export function IeDashboardPage() {
       <Card
         title="Employee Attendance Verification"
         subtitle="Every active employee with image, department, current line, fingerprint status, face status, and overall attendance."
-        actions={<SearchField value={query} onChange={setQuery} placeholder="Search employee, line, or department" />}
+        actions={
+          <>
+            <StatusBadge label={`${unmatchedFingerprintCount} unmatched fingerprint PINs`} tone="warning" />
+            <SearchField value={query} onChange={setQuery} placeholder="Search employee, line, or department" />
+          </>
+        }
       >
         <div className="ops-table-wrap" style={{ maxHeight: 620, overflow: "auto" }}>
           <table className="ops-table">

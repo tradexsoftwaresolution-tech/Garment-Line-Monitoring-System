@@ -17,6 +17,8 @@ import {
 } from "@/lib/backend/pipeline-api";
 import type { ZktecoDevice, ZktecoFingerprintEvent, ZktecoStatus } from "@/types/zkteco";
 import { Button, Card, EmptyState, KpiCard, PageHeader, StatusBadge, formatDateTime } from "../components/ops-ui";
+import { resolveFingerprintDeviceSummary } from "../fingerprint-device-counts";
+import { useOperations } from "../operations-context";
 
 const EXPECTED_TERMINAL_COUNT = 5;
 const EXPECTED_TERMINAL_IPS = ["10.10.4.40", "10.10.4.41", "10.10.4.42", "10.10.4.43", "10.10.4.46"];
@@ -29,6 +31,7 @@ const EMPTY_STATUS: ZktecoStatus = {
 };
 
 export function ZktecoFingerprintPage() {
+  const { fingerprintDeviceSummary } = useOperations();
   const backendConfigured = isBackendConfigured();
   const [status, setStatus] = useState<ZktecoStatus>(EMPTY_STATUS);
   const [events, setEvents] = useState<ZktecoFingerprintEvent[]>([]);
@@ -44,7 +47,7 @@ export function ZktecoFingerprintPage() {
 
     const [nextStatus, nextEvents] = await Promise.all([
       getZktecoStatusFromBackend(),
-      getZktecoEventsFromBackend(100),
+      getZktecoEventsFromBackend(5000),
     ]);
     setStatus(nextStatus);
     setEvents(nextEvents);
@@ -92,6 +95,11 @@ export function ZktecoFingerprintPage() {
     [events]
   );
   const unmatchedEvents = events.length - matchedEvents;
+  const resolvedFingerprintDeviceSummary = useMemo(
+    () => resolveFingerprintDeviceSummary(fingerprintDeviceSummary, events),
+    [events, fingerprintDeviceSummary]
+  );
+  const unregisteredPins = resolvedFingerprintDeviceSummary.unregisteredPins;
   const latestEvent = events[0];
 
   async function refresh() {
@@ -187,22 +195,68 @@ export function ZktecoFingerprintPage() {
           soft="rgba(15, 118, 110, 0.14)"
         />
         <KpiCard
-          label="Matched Punches"
-          value={String(matchedEvents)}
-          meta="Latest events matched to employees"
+          label="Device Attendees"
+          value={String(resolvedFingerprintDeviceSummary.totalDevicePins || matchedEvents + unmatchedEvents)}
+          meta={`${resolvedFingerprintDeviceSummary.totalPunches || events.length} raw punch event(s) received today`}
           icon={UserCheck}
           accent="#20a464"
           soft="rgba(52, 199, 89, 0.16)"
         />
         <KpiCard
-          label="Unmatched PINs"
-          value={String(unmatchedEvents)}
+          label="Unregistered PINs"
+          value={String(resolvedFingerprintDeviceSummary.unregisteredDevicePins || unregisteredPins.length)}
           meta="Device PIN not found as employee code or EPF"
           icon={UserX}
           accent="#d92d20"
           soft="rgba(255, 59, 48, 0.14)"
         />
       </section>
+
+      <Card
+        title="Unregistered Fingerprint PINs"
+        subtitle="These PINs are included in the overall fingerprint device count, but remain excluded from employee, department, and line attendance until registered."
+        actions={
+          resolvedFingerprintDeviceSummary.attendanceDate ? (
+            <StatusBadge label={resolvedFingerprintDeviceSummary.attendanceDate} tone="info" />
+          ) : null
+        }
+      >
+        {unregisteredPins.length ? (
+          <div className="ops-table-wrap">
+            <table className="ops-table">
+              <thead>
+                <tr>
+                  <th>PIN</th>
+                  <th>First Punch</th>
+                  <th>Last Punch</th>
+                  <th>Punches</th>
+                  <th>Devices</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unregisteredPins.map((pin) => (
+                  <tr key={pin.pin}>
+                    <td className="ops-monospace">{pin.pin}</td>
+                    <td>{formatDateTime(pin.firstPunch)}</td>
+                    <td>{formatDateTime(pin.lastPunch)}</td>
+                    <td>{pin.punchCount}</td>
+                    <td>{pin.deviceIps.join(", ") || "No device IP"}</td>
+                    <td>
+                      <StatusBadge label="Not registered" tone="warning" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyState
+            title="No unregistered fingerprint PINs"
+            description="Every fingerprint PIN received for the selected day is currently matched to an employee record."
+          />
+        )}
+      </Card>
 
       <section className="ops-grid cols-2">
         <Card

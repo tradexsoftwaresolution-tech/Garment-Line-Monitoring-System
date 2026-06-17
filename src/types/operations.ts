@@ -6,6 +6,7 @@ import type {
   AuditLogEntry,
   DepartmentAttendanceSummary,
   FaceEvent,
+  FingerprintDeviceSummary,
   FingerprintEvent,
   IncentiveRecord,
   LeaveRecord,
@@ -36,6 +37,7 @@ export interface OperationsSnapshot {
   workers: WorkerProfile[];
   lines: ProductionLineRecord[];
   faceEvents: FaceEvent[];
+  fingerprintDeviceSummary: FingerprintDeviceSummary;
   fingerprintEvents: FingerprintEvent[];
   validationRecords: ValidationRecord[];
   lineAssignments: LineAssignmentRecord[];

@@ -15,6 +15,8 @@ import {
   YAxis,
 } from "recharts";
 import { useOperations } from "../operations-context";
+import { resolveFingerprintDeviceSummary } from "../fingerprint-device-counts";
+import { useZktecoFingerprintEvents } from "../hooks/use-zkteco-fingerprint-events";
 import { Card, KpiCard, PageHeader } from "../components/ops-ui";
 
 const COLORS = {
@@ -28,7 +30,9 @@ const COLORS = {
 };
 
 export function IeAnalyticsPage() {
-  const { attendanceOverview, departmentAttendance, lines, workers, reportSeries } = useOperations();
+  const { attendanceOverview, departmentAttendance, lines, workers, reportSeries, fingerprintDeviceSummary } =
+    useOperations();
+  const { events: zktecoFingerprintEvents } = useZktecoFingerprintEvents(5000);
 
   const statusData = useMemo(
     () => [
@@ -40,20 +44,33 @@ export function IeAnalyticsPage() {
     [attendanceOverview]
   );
 
+  const resolvedFingerprintDeviceSummary = useMemo(
+    () => resolveFingerprintDeviceSummary(fingerprintDeviceSummary, zktecoFingerprintEvents),
+    [fingerprintDeviceSummary, zktecoFingerprintEvents]
+  );
+  const registeredFingerprintWorkers = workers.filter(
+    (worker) => worker.fingerprintVerificationStatus === "Verified"
+  ).length;
+  const registeredFingerprintAttended =
+    resolvedFingerprintDeviceSummary.registeredDevicePins || registeredFingerprintWorkers;
+  const unmatchedFingerprintCount = resolvedFingerprintDeviceSummary.unregisteredDevicePins;
+
   const verificationData = useMemo(
     () => [
       {
         label: "Fingerprint",
-        attended: workers.filter((worker) => worker.fingerprintVerificationStatus === "Verified").length,
+        attended: registeredFingerprintAttended,
+        unmatched: unmatchedFingerprintCount,
         missing: workers.filter((worker) => worker.fingerprintVerificationStatus !== "Verified").length,
       },
       {
         label: "Face",
         attended: workers.filter((worker) => worker.faceVerificationStatus === "Verified").length,
+        unmatched: 0,
         missing: workers.filter((worker) => worker.faceVerificationStatus !== "Verified").length,
       },
     ],
-    [workers]
+    [registeredFingerprintAttended, unmatchedFingerprintCount, workers]
   );
 
   const lineChartData = useMemo(
@@ -144,7 +161,10 @@ export function IeAnalyticsPage() {
           </div>
         </Card>
 
-        <Card title="Verification Coverage" subtitle="Fingerprint and face attendance coverage.">
+        <Card
+          title="Verification Coverage"
+          subtitle="Fingerprint coverage separates registered workers from unmatched device PINs."
+        >
           <div style={{ width: "100%", height: 300 }}>
             <ResponsiveContainer>
               <BarChart data={verificationData}>
@@ -153,7 +173,8 @@ export function IeAnalyticsPage() {
                 <YAxis tickLine={false} axisLine={false} />
                 <Tooltip />
                 <Legend />
-                <Bar dataKey="attended" name="Attended" fill={COLORS.fingerprint} radius={[6, 6, 0, 0]} />
+                <Bar dataKey="attended" name="Registered attended" fill={COLORS.fingerprint} radius={[6, 6, 0, 0]} />
+                <Bar dataKey="unmatched" name="Unmatched PINs" fill={COLORS.late} radius={[6, 6, 0, 0]} />
                 <Bar dataKey="missing" name="Not attended" fill={COLORS.absent} radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
