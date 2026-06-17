@@ -74,6 +74,18 @@ type ProductionLineMetricRow = Awaited<ReturnType<typeof listProductionLineMetri
 type ProductionLineOutputEntryRow = Awaited<ReturnType<typeof listProductionLineOutputEntries>>[number];
 
 const LATE_FACE_ARRIVAL_CUTOFF = "08:00:00";
+const ATTENDANCE_TIME_ZONE = "Asia/Colombo";
+
+function currentAttendanceDate() {
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: ATTENDANCE_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const value = (type: string) => parts.find((part) => part.type === type)?.value || "";
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
 
 function currentTimeText() {
   return new Date().toLocaleTimeString("en-GB", {
@@ -248,6 +260,27 @@ function mapAttendanceStatus(args: {
   fingerprintRow?: FingerprintAttendanceRow;
   reconciliationRow?: ReconciliationRow;
 }): WorkerProfile["attendanceStatus"] {
+  if (args.reconciliationRow) {
+    const effectiveStatus =
+      args.reconciliationRow.manual_override_status || args.reconciliationRow.reconciliation_status;
+
+    if (effectiveStatus === "leave") {
+      return "On Leave";
+    }
+
+    if (effectiveStatus === "absent") {
+      return "Absent";
+    }
+
+    if (args.reconciliationRow.fingerprint_time_in || args.reconciliationRow.fingerprint_time_out) {
+      return toNumber(args.reconciliationRow.late_early_hours) > 0 ? "Late" : "Present";
+    }
+
+    if (args.reconciliationRow.face_first_seen) {
+      return isAfterLateFaceArrivalCutoff(args.reconciliationRow.face_first_seen) ? "Late" : "Present";
+    }
+  }
+
   if (args.fingerprintRow) {
     if (args.fingerprintRow.attendance_state === "leave") {
       return "On Leave";
@@ -262,25 +295,6 @@ function mapAttendanceStatus(args: {
     }
 
     return "Absent";
-  }
-
-  if (!args.reconciliationRow) {
-    return "Absent";
-  }
-
-  const effectiveStatus =
-    args.reconciliationRow.manual_override_status || args.reconciliationRow.reconciliation_status;
-
-  if (effectiveStatus === "leave") {
-    return "On Leave";
-  }
-
-  if (args.reconciliationRow.fingerprint_time_in || args.reconciliationRow.fingerprint_time_out) {
-    return toNumber(args.reconciliationRow.late_early_hours) > 0 ? "Late" : "Present";
-  }
-
-  if (args.reconciliationRow.face_first_seen) {
-    return isAfterLateFaceArrivalCutoff(args.reconciliationRow.face_first_seen) ? "Late" : "Present";
   }
 
   return "Absent";
@@ -749,6 +763,14 @@ function monthStartKey(date: string) {
   return `${monthKey(date)}-01`;
 }
 
+function isPresentReconciliationStatus(row: ReconciliationRow) {
+  const effectiveStatus = row.manual_override_status || row.reconciliation_status;
+  if (["validated", "face_only", "fingerprint_only"].includes(effectiveStatus)) {
+    return true;
+  }
+  return Boolean(row.face_first_seen || row.fingerprint_time_in || row.fingerprint_time_out);
+}
+
 function calculateMockIncentive(daysPresent: number) {
   if (daysPresent >= 24) return 14000;
   if (daysPresent >= 18) return daysPresent * 500;
@@ -784,8 +806,10 @@ function buildAttendanceSummaries(args: {
     let leaveDays = 0;
     let otHours = 0;
     let resolvedDays = 0;
+    const fingerprintDates = new Set<string>();
 
     fingerprintRows.forEach((row) => {
+      fingerprintDates.add(row.attendance_date);
       if (row.attendance_state === "present") {
         daysPresent += 1;
       } else if (row.attendance_state === "leave") {
@@ -799,6 +823,18 @@ function buildAttendanceSummaries(args: {
 
     validationRows.forEach((row) => {
       const effectiveStatus = row.manual_override_status || row.reconciliation_status;
+
+      if (!fingerprintDates.has(row.attendance_date)) {
+        if (effectiveStatus === "leave") {
+          leaveDays += 1;
+        } else if (effectiveStatus === "absent") {
+          daysAbsent += 1;
+        } else if (isPresentReconciliationStatus(row)) {
+          daysPresent += 1;
+        }
+
+        otHours += toNumber(row.ot_hours);
+      }
 
       if (!["needs_review", "anomaly"].includes(effectiveStatus)) {
         resolvedDays += 1;
@@ -1019,22 +1055,33 @@ export async function getOperationsSnapshot(
   });
 
   const latestFingerprintRowByEmployeeCode = new Map<string, FingerprintAttendanceRow>();
+  const fingerprintRowByEmployeeCodeAndDate = new Map<string, FingerprintAttendanceRow>();
   fingerprintRows.forEach((row) => {
     if (!latestFingerprintRowByEmployeeCode.has(row.employee_code)) {
       latestFingerprintRowByEmployeeCode.set(row.employee_code, row);
     }
+    const key = `${row.employee_code}:${row.attendance_date}`;
+    if (!fingerprintRowByEmployeeCodeAndDate.has(key)) {
+      fingerprintRowByEmployeeCodeAndDate.set(key, row);
+    }
   });
 
   const latestAttendanceDate =
-    fingerprintRows[0]?.attendance_date ||
     reconciliationRows[0]?.attendance_date ||
-    new Date().toISOString().slice(0, 10);
+    fingerprintRows[0]?.attendance_date ||
+    currentAttendanceDate();
 
   const mappedWorkers = employees.map<WorkerProfile>((employee) => {
     const profile = employeeProfilesByEmployeeId.get(employee.id);
     const notes = employeeNotesByEmployeeId.get(employee.id) || [];
-    const latestFingerprintRow = latestFingerprintRowByEmployeeCode.get(employee.employee_code);
     const latestRow = latestRowByEmployeeCode.get(employee.employee_code);
+    const effectiveAttendanceDate = latestRow?.attendance_date || latestAttendanceDate;
+    const sameDateFingerprintRow = fingerprintRowByEmployeeCodeAndDate.get(
+      `${employee.employee_code}:${effectiveAttendanceDate}`
+    );
+    const latestFingerprintRow =
+      sameDateFingerprintRow ||
+      (latestRow ? undefined : latestFingerprintRowByEmployeeCode.get(employee.employee_code));
     const assignment = activeAssignmentsByEmployeeId.get(employee.id);
     const transfers = transfersByEmployeeId.get(employee.id) || [];
     const validationStatus = mapValidationStatus(latestRow, notes);
@@ -1044,22 +1091,24 @@ export async function getOperationsSnapshot(
     });
     const hasRecentTransfer =
       Boolean(transfers[0]) &&
-      transfers[0].transferred_at.slice(0, 10) ===
-        (latestFingerprintRow?.attendance_date || latestRow?.attendance_date || latestAttendanceDate);
+      transfers[0].transferred_at.slice(0, 10) === effectiveAttendanceDate;
 
     return {
       id: employee.id,
       employeeId: employee.employee_code,
       fullName:
         employee.display_name ||
+        latestRow?.employee_name ||
         latestFingerprintRow?.employee_name ||
         employee.employee_code,
       photoUrl: profile?.photo_url || undefined,
       department:
+        latestRow?.department_name ||
         latestFingerprintRow?.department_name ||
         employee.department_name ||
         "Unassigned",
       roleTitle:
+        latestRow?.designation ||
         latestFingerprintRow?.designation ||
         employee.designation ||
         "Worker",

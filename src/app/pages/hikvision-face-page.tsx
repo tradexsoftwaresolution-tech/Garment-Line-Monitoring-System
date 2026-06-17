@@ -68,18 +68,22 @@ export function HikvisionFacePage() {
   }, [load]);
 
   useEffect(() => {
-    if (!backendConfigured || !status.running) {
+    if (!backendConfigured) {
       return undefined;
     }
 
     const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
       void load().catch((nextError) => {
         setError(nextError instanceof Error ? nextError.message : String(nextError));
       });
-    }, Math.max(2000, status.pollIntervalSeconds * 1000));
+    }, Math.max(5000, status.pollIntervalSeconds * 1000));
 
     return () => window.clearInterval(timer);
-  }, [backendConfigured, load, status.pollIntervalSeconds, status.running]);
+  }, [backendConfigured, load, status.pollIntervalSeconds]);
 
   const latestEvent = events[0];
   const unmatchedCount = useMemo(

@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -174,6 +175,24 @@ const EMPTY_SNAPSHOT: OperationsSnapshot = {
 };
 
 const OperationsContext = createContext<OperationsContextValue | null>(null);
+const LIVE_REFRESH_INTERVAL_MS = 10_000;
+const REALTIME_REFRESH_DEBOUNCE_MS = 750;
+const LIVE_REFRESH_TABLES = [
+  "attendance_reconciliation",
+  "hikvision_face_events",
+  "zkteco_fingerprint_events",
+  "fingerprint_daily_attendance",
+  "face_daily_summary",
+  "production_lines",
+  "line_assignments",
+  "production_line_output_entries",
+  "operations_alerts",
+  "operations_alert_history",
+  "employee_profiles",
+  "employee_notes",
+  "employees",
+  "transfer_logs",
+];
 
 function createUnavailableResult(message: string): OperationsActionResult {
   return { ok: false, message };
@@ -358,8 +377,16 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<OperationsSnapshot>(EMPTY_SNAPSHOT);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loadInFlightRef = useRef(false);
+  const queuedRefreshRef = useRef(false);
+  const realtimeRefreshTimerRef = useRef<number | null>(null);
 
-  const loadSnapshot = useCallback(async () => {
+  const loadSnapshot = useCallback(async (options: { silent?: boolean } = {}) => {
+    if (loadInFlightRef.current) {
+      queuedRefreshRef.current = true;
+      return;
+    }
+
     if (!isConfigured || !isAuthenticated) {
       setSnapshot(EMPTY_SNAPSHOT);
       setError(null);
@@ -376,7 +403,10 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    setLoading(true);
+    loadInFlightRef.current = true;
+    if (!options.silent) {
+      setLoading(true);
+    }
     setError(null);
 
     try {
@@ -390,9 +420,20 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       setSnapshot(nextSnapshot);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : String(nextError));
-      setSnapshot(EMPTY_SNAPSHOT);
+      if (!options.silent) {
+        setSnapshot(EMPTY_SNAPSHOT);
+      }
     } finally {
-      setLoading(false);
+      loadInFlightRef.current = false;
+      if (!options.silent) {
+        setLoading(false);
+      }
+      if (queuedRefreshRef.current) {
+        queuedRefreshRef.current = false;
+        window.setTimeout(() => {
+          void loadSnapshot({ silent: true });
+        }, 0);
+      }
     }
   }, [currentUser.role, isAuthenticated, isConfigured]);
 
@@ -401,6 +442,78 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       void loadSnapshot();
     }
   }, [authLoading, loadSnapshot]);
+
+  useEffect(() => {
+    if (authLoading || !isConfigured || !isAuthenticated) {
+      return undefined;
+    }
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        void loadSnapshot({ silent: true });
+      }
+    };
+
+    const timer = window.setInterval(refreshWhenVisible, LIVE_REFRESH_INTERVAL_MS);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("focus", refreshWhenVisible);
+    window.addEventListener("online", refreshWhenVisible);
+
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("focus", refreshWhenVisible);
+      window.removeEventListener("online", refreshWhenVisible);
+    };
+  }, [authLoading, isAuthenticated, isConfigured, loadSnapshot]);
+
+  useEffect(() => {
+    if (authLoading || !isConfigured || !isAuthenticated) {
+      return undefined;
+    }
+
+    const client = getSupabaseBrowserClient();
+    if (!client) {
+      return undefined;
+    }
+
+    const scheduleRealtimeRefresh = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      if (realtimeRefreshTimerRef.current) {
+        window.clearTimeout(realtimeRefreshTimerRef.current);
+      }
+
+      realtimeRefreshTimerRef.current = window.setTimeout(() => {
+        realtimeRefreshTimerRef.current = null;
+        void loadSnapshot({ silent: true });
+      }, REALTIME_REFRESH_DEBOUNCE_MS);
+    };
+
+    const channel = client.channel("operations-live-refresh");
+    LIVE_REFRESH_TABLES.forEach((table) => {
+      channel.on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table,
+        },
+        scheduleRealtimeRefresh
+      );
+    });
+    channel.subscribe();
+
+    return () => {
+      if (realtimeRefreshTimerRef.current) {
+        window.clearTimeout(realtimeRefreshTimerRef.current);
+        realtimeRefreshTimerRef.current = null;
+      }
+      void client.removeChannel(channel);
+    };
+  }, [authLoading, isAuthenticated, isConfigured, loadSnapshot]);
 
   const withClient = useCallback(
     async (
@@ -419,7 +532,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       try {
         const result = await action(client);
         if (result.ok) {
-          await loadSnapshot();
+          await loadSnapshot({ silent: true });
           if (result.attendanceOverride) {
             setSnapshot((current) =>
               applyAttendanceOverrideToSnapshot(current, result.attendanceOverride!)
@@ -442,7 +555,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       ...snapshot,
       loading,
       error,
-      refresh: loadSnapshot,
+      refresh: () => loadSnapshot(),
       assignWorker: async ({ workerId, lineId, reason }) =>
         withClient((client) =>
           assignWorkerToLine(client, {

@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { Download, Users } from "lucide-react";
+import { Clock3, Download, Fingerprint, ScanFace, UserX, Users } from "lucide-react";
+import {
+  ATTENDANCE_REPORT_FILTERS,
+  type AttendanceReportFilter,
+  buildAttendanceReportRows,
+  hasFaceAttendance,
+  hasFingerprintAttendance,
+  matchesAttendanceReportFilter,
+} from "../attendance-reporting";
 import { useAuth } from "../auth";
 import { useOperations, findLine } from "../operations-context";
 import {
@@ -23,6 +31,7 @@ export function WorkersPage() {
   const [search, setSearch] = useState("");
   const [department, setDepartment] = useState("All");
   const [status, setStatus] = useState("All");
+  const [attendanceFocus, setAttendanceFocus] = useState<AttendanceReportFilter>("all");
   const [page, setPage] = useState(1);
 
   const departments = useMemo(
@@ -38,12 +47,14 @@ export function WorkersPage() {
           !query ||
           worker.fullName.toLowerCase().includes(query) ||
           worker.employeeId.toLowerCase().includes(query) ||
-          worker.roleTitle.toLowerCase().includes(query);
+          worker.roleTitle.toLowerCase().includes(query) ||
+          worker.department.toLowerCase().includes(query);
         const matchesDepartment = department === "All" || worker.department === department;
         const matchesStatus = status === "All" || worker.attendanceStatus === status;
-        return matchesQuery && matchesDepartment && matchesStatus;
+        const matchesFocus = matchesAttendanceReportFilter(worker, attendanceFocus);
+        return matchesQuery && matchesDepartment && matchesStatus && matchesFocus;
       }),
-    [department, search, status, workers]
+    [attendanceFocus, department, search, status, workers]
   );
 
   const totalPages = Math.max(1, Math.ceil(filteredWorkers.length / WORKERS_PAGE_SIZE));
@@ -56,34 +67,23 @@ export function WorkersPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [department, search, status]);
+  }, [attendanceFocus, department, search, status]);
 
   useEffect(() => {
     setPage((current) => Math.min(current, totalPages));
   }, [totalPages]);
 
-  const exportRows = [
-    [
-      "Employee ID",
-      "Worker",
-      "Department",
-      "Role",
-      "Current Line",
-      "Shift",
-      "Attendance",
-      "Security Check",
-    ],
-    ...filteredWorkers.map((worker) => [
-      worker.employeeId,
-      worker.fullName,
-      worker.department,
-      worker.roleTitle,
-      findLine(lines, worker.currentLineId)?.name || "Unassigned",
-      worker.shift,
-      worker.attendanceStatus,
-      worker.finalValidationStatus,
-    ]),
-  ];
+  const lateWorkers = workers.filter((worker) => worker.attendanceStatus === "Late").length;
+  const absentWorkers = workers.filter((worker) => worker.attendanceStatus === "Absent").length;
+  const missingFaceWorkers = workers.filter((worker) => !hasFaceAttendance(worker)).length;
+  const missingFingerprintWorkers = workers.filter(
+    (worker) => !hasFingerprintAttendance(worker)
+  ).length;
+  const missingBothWorkers = workers.filter(
+    (worker) => !hasFaceAttendance(worker) && !hasFingerprintAttendance(worker)
+  ).length;
+
+  const exportRows = buildAttendanceReportRows(filteredWorkers, lines);
 
   return (
     <div className="ops-page">
@@ -108,28 +108,36 @@ export function WorkersPage() {
           soft="var(--ops-primary-soft)"
         />
         <KpiCard
-          label="Present Today"
-          value={`${workers.filter((worker) => worker.attendanceStatus === "Present" || worker.attendanceStatus === "Late").length}`}
-          meta="Workers who have clocked in through the fingerprint attendance source."
-          icon={Users}
-          accent="var(--ops-success)"
-          soft="var(--ops-success-soft)"
+          label="Late Today"
+          value={`${lateWorkers}`}
+          meta="Workers marked late from the live attendance snapshot."
+          icon={Clock3}
+          accent="var(--ops-warning)"
+          soft="var(--ops-warning-soft)"
         />
         <KpiCard
-          label="On Leave"
-          value={`${workers.filter((worker) => worker.attendanceStatus === "On Leave").length}`}
-          meta="Workers currently tagged as leave from imported attendance data."
-          icon={Users}
+          label="Absent Today"
+          value={`${absentWorkers}`}
+          meta="Workers currently marked absent."
+          icon={UserX}
+          accent="var(--ops-danger)"
+          soft="var(--ops-danger-soft)"
+        />
+        <KpiCard
+          label="Face Not Attended"
+          value={`${missingFaceWorkers}`}
+          meta={`${missingBothWorkers} workers are missing both face and fingerprint signals.`}
+          icon={ScanFace}
           accent="var(--ops-violet)"
           soft="var(--ops-violet-soft)"
         />
         <KpiCard
-          label="Unassigned"
-          value={`${workers.filter((worker) => !worker.currentLineId).length}`}
-          meta="Workers without an active production-line assignment."
-          icon={Users}
-          accent="var(--ops-warning)"
-          soft="var(--ops-warning-soft)"
+          label="Fingerprint Not Attended"
+          value={`${missingFingerprintWorkers}`}
+          meta="Workers without a verified fingerprint attendance signal."
+          icon={Fingerprint}
+          accent="var(--ops-primary)"
+          soft="var(--ops-primary-soft)"
         />
       </section>
 
@@ -162,6 +170,18 @@ export function WorkersPage() {
           <option value="Late">Late</option>
           <option value="Absent">Absent</option>
           <option value="On Leave">On Leave</option>
+        </select>
+        <select
+          className="ops-select"
+          style={{ flex: "0 0 250px" }}
+          value={attendanceFocus}
+          onChange={(event) => setAttendanceFocus(event.target.value as AttendanceReportFilter)}
+        >
+          {ATTENDANCE_REPORT_FILTERS.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
         </select>
       </div>
 

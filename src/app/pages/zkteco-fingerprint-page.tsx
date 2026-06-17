@@ -62,6 +62,10 @@ export function ZktecoFingerprintPage() {
     }
 
     const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
       void load().catch((nextError) => {
         setError(nextError instanceof Error ? nextError.message : String(nextError));
       });
