@@ -40,7 +40,7 @@ import org.springframework.util.MultiValueMap;
 @Service
 public class ZktecoAdmsService {
 
-  private static final int MAX_EVENTS = 500;
+  private static final int MAX_EVENTS = 5000;
   private static final int DEFAULT_DELAY_SECONDS = 10;
   private static final ZoneId DEFAULT_ZONE = ZoneId.of("Asia/Colombo");
   private static final List<DateTimeFormatter> LOCAL_DATE_TIME_FORMATTERS =
@@ -171,7 +171,7 @@ public class ZktecoAdmsService {
   }
 
   public ZktecoStatus status(AuthenticatedUser user) {
-    roleGuard.requireAnyRole(user, "admin", "hr", "supervisor", "viewer");
+    roleGuard.requireAnyRole(user, "admin", "hr", "ie", "supervisor", "viewer");
     MultiValueMap<String, String> query = new LinkedMultiValueMap<>();
     query.add("order", "last_seen_at.desc.nullslast");
     query.add("limit", "100");
@@ -180,7 +180,7 @@ public class ZktecoAdmsService {
   }
 
   public ArrayNode listEvents(AuthenticatedUser user, int limit) {
-    roleGuard.requireAnyRole(user, "admin", "hr", "supervisor", "viewer");
+    roleGuard.requireAnyRole(user, "admin", "hr", "ie", "supervisor", "viewer");
     int safeLimit = Math.max(1, Math.min(limit, MAX_EVENTS));
     MultiValueMap<String, String> query = new LinkedMultiValueMap<>();
     query.add("order", "event_time.desc");

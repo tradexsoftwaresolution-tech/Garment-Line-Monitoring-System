@@ -6,6 +6,7 @@ import type {
   AuditLogEntry,
   DepartmentAttendanceSummary,
   FaceEvent,
+  FingerprintDeviceSummary,
   FingerprintEvent,
   OvertimeRecord,
   ProductionLineRecord,
@@ -39,6 +40,7 @@ import {
   listEmployeeProfiles,
   listEmployees,
   listFingerprintAttendanceRows,
+  listZktecoFingerprintEventsForDate,
   listIncentiveRecords,
   listLineAssignments,
   listOperationsAlertHistory,
@@ -67,6 +69,8 @@ type EmployeeProfileRow = Awaited<ReturnType<typeof listEmployeeProfiles>>[numbe
 type EmployeeNoteRow = Awaited<ReturnType<typeof listEmployeeNotes>>[number];
 type FingerprintAttendanceRow =
   Awaited<ReturnType<typeof listFingerprintAttendanceRows>>[number];
+type ZktecoFingerprintEventRow =
+  Awaited<ReturnType<typeof listZktecoFingerprintEventsForDate>>[number];
 type LineAssignmentRow = Awaited<ReturnType<typeof listLineAssignments>>[number];
 type TransferLogRow = Awaited<ReturnType<typeof listTransferLogs>>[number];
 type ProductionLineRow = Awaited<ReturnType<typeof listProductionLines>>[number];
@@ -102,6 +106,88 @@ function withManualAttendanceOverrideFlag(value: Json | null): Json {
     return flags;
   }
   return [...flags, "manual_attendance_override"];
+}
+
+function normalizeFingerprintPin(value: string | null | undefined) {
+  const trimmed = String(value || "").trim();
+  return trimmed.replace(/^0+(?=\d)/, "");
+}
+
+function buildFingerprintDeviceSummary(
+  events: ZktecoFingerprintEventRow[],
+  attendanceDate: string
+): FingerprintDeviceSummary {
+  const groups = new Map<
+    string,
+    {
+      pin: string;
+      firstPunch: string;
+      lastPunch: string;
+      punchCount: number;
+      registeredPunches: number;
+      deviceIps: Set<string>;
+      matched: boolean;
+    }
+  >();
+
+  events.forEach((event) => {
+    const pin = normalizeFingerprintPin(event.employee_pin);
+    if (!pin) {
+      return;
+    }
+
+    const punchAt = event.event_time || `${event.attendance_date}T${event.punch_time}`;
+    const current =
+      groups.get(pin) ||
+      {
+        pin,
+        firstPunch: punchAt,
+        lastPunch: punchAt,
+        punchCount: 0,
+        registeredPunches: 0,
+        deviceIps: new Set<string>(),
+        matched: false,
+      };
+
+    current.punchCount += 1;
+    if (event.match_status === "matched" || event.employee_code || event.employee_id) {
+      current.matched = true;
+      current.registeredPunches += 1;
+    }
+    if (event.device_ip) {
+      current.deviceIps.add(event.device_ip);
+    }
+    if (punchAt < current.firstPunch) {
+      current.firstPunch = punchAt;
+    }
+    if (punchAt > current.lastPunch) {
+      current.lastPunch = punchAt;
+    }
+    groups.set(pin, current);
+  });
+
+  const pinGroups = Array.from(groups.values());
+  const unregisteredPins = pinGroups
+    .filter((group) => !group.matched)
+    .map((group) => ({
+      pin: group.pin,
+      firstPunch: group.firstPunch,
+      lastPunch: group.lastPunch,
+      punchCount: group.punchCount,
+      deviceIps: Array.from(group.deviceIps).sort(),
+    }))
+    .sort((a, b) => a.pin.localeCompare(b.pin, undefined, { numeric: true }));
+
+  return {
+    attendanceDate,
+    totalDevicePins: pinGroups.length,
+    registeredDevicePins: pinGroups.filter((group) => group.matched).length,
+    unregisteredDevicePins: unregisteredPins.length,
+    totalPunches: events.length,
+    registeredPunches: pinGroups.reduce((sum, group) => sum + group.registeredPunches, 0),
+    unregisteredPunches: unregisteredPins.reduce((sum, group) => sum + group.punchCount, 0),
+    unregisteredPins,
+  };
 }
 type OperationsAlertRow = Awaited<ReturnType<typeof listOperationsAlerts>>[number];
 type OperationsAlertHistoryRow =
@@ -1070,6 +1156,15 @@ export async function getOperationsSnapshot(
     reconciliationRows[0]?.attendance_date ||
     fingerprintRows[0]?.attendance_date ||
     currentAttendanceDate();
+  const fingerprintDeviceAttendanceDate = currentAttendanceDate();
+  const zktecoFingerprintEvents = await listZktecoFingerprintEventsForDate(
+    client,
+    fingerprintDeviceAttendanceDate
+  );
+  const fingerprintDeviceSummary = buildFingerprintDeviceSummary(
+    zktecoFingerprintEvents,
+    fingerprintDeviceAttendanceDate
+  );
 
   const mappedWorkers = employees.map<WorkerProfile>((employee) => {
     const profile = employeeProfilesByEmployeeId.get(employee.id);
@@ -1415,6 +1510,7 @@ export async function getOperationsSnapshot(
     workers: mappedWorkers,
     lines: mappedLines,
     faceEvents,
+    fingerprintDeviceSummary,
     fingerprintEvents:
       fingerprintEventsFromAttendance.length > 0
         ? fingerprintEventsFromAttendance

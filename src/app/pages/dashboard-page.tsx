@@ -1,7 +1,9 @@
 import { useMemo } from "react";
 import { Link } from "react-router";
-import { AlertTriangle, Clock3, ShieldCheck, Users } from "lucide-react";
+import { AlertTriangle, Clock3, Fingerprint, ShieldCheck, Users } from "lucide-react";
 import { useAuth } from "../auth";
+import { resolveFingerprintDeviceSummary } from "../fingerprint-device-counts";
+import { useZktecoFingerprintEvents } from "../hooks/use-zkteco-fingerprint-events";
 import { useOperations } from "../operations-context";
 import { IeDashboardPage } from "./ie-dashboard-page";
 import {
@@ -27,14 +29,24 @@ function formatAttendanceDate(value: string) {
 
 export function DashboardPage() {
   const { currentUser } = useAuth();
-  const { attendanceOverview, departmentAttendance, alerts, lines } = useOperations();
+  const {
+    attendanceOverview,
+    departmentAttendance,
+    alerts,
+    lines,
+    fingerprintDeviceSummary,
+  } = useOperations();
 
-  if (currentUser.role === "ie") {
-    return <IeDashboardPage />;
-  }
-
+  const isIeUser = currentUser.role === "ie";
+  const { events: zktecoFingerprintEvents } = useZktecoFingerprintEvents(5000, !isIeUser);
+  const resolvedFingerprintDeviceSummary = useMemo(
+    () => resolveFingerprintDeviceSummary(fingerprintDeviceSummary, zktecoFingerprintEvents),
+    [fingerprintDeviceSummary, zktecoFingerprintEvents]
+  );
   const latestAttendanceDateLabel = formatAttendanceDate(attendanceOverview.attendanceDate);
   const clockedInToday = attendanceOverview.presentWorkers + attendanceOverview.lateWorkers;
+  const fingerprintDeviceCount =
+    resolvedFingerprintDeviceSummary.totalDevicePins || clockedInToday;
   const openAlerts = alerts.filter((alert) => alert.status !== "Resolved");
   const lineCoverage = useMemo(
     () =>
@@ -48,6 +60,10 @@ export function DashboardPage() {
         .slice(0, 6),
     [lines]
   );
+
+  if (isIeUser) {
+    return <IeDashboardPage />;
+  }
 
   return (
     <div className="ops-page">
@@ -76,9 +92,9 @@ export function DashboardPage() {
           soft="var(--ops-primary-soft)"
         />
         <KpiCard
-          label="Clocked In Today"
-          value={`${clockedInToday}/${attendanceOverview.totalWorkers}`}
-          meta={`${attendanceOverview.lateWorkers} late arrivals captured through fingerprint attendance.`}
+          label="Fingerprint Device Count"
+          value={`${fingerprintDeviceCount}/${attendanceOverview.totalWorkers}`}
+          meta={`${resolvedFingerprintDeviceSummary.registeredDevicePins} registered, ${resolvedFingerprintDeviceSummary.unregisteredDevicePins} unregistered PINs.`}
           icon={Clock3}
           accent="var(--ops-success)"
           soft="var(--ops-success-soft)"
@@ -199,7 +215,7 @@ export function DashboardPage() {
       <section className="ops-grid cols-2">
         <Card
           title="Attendance Overview"
-          subtitle="Quick roll-up of the latest fingerprint attendance snapshot."
+          subtitle="Registered roster attendance plus raw fingerprint device totals."
         >
           <div className="ops-stat-strip">
             <div className="ops-stat-tile">
@@ -218,7 +234,54 @@ export function DashboardPage() {
               <div className="ops-stat-label">Absent</div>
               <div className="ops-stat-value">{attendanceOverview.absentWorkers}</div>
             </div>
+            <div className="ops-stat-tile">
+              <div className="ops-stat-label">Device PINs</div>
+              <div className="ops-stat-value">{resolvedFingerprintDeviceSummary.totalDevicePins}</div>
+            </div>
+            <div className="ops-stat-tile">
+              <div className="ops-stat-label">Unregistered</div>
+              <div className="ops-stat-value">{resolvedFingerprintDeviceSummary.unregisteredDevicePins}</div>
+            </div>
           </div>
+
+          {resolvedFingerprintDeviceSummary.unregisteredPins.length ? (
+            <>
+              <div className="ops-card-divider" />
+              <div className="ops-item-header">
+                <div>
+                  <div className="ops-item-title">Unregistered Fingerprint PINs</div>
+                  <div className="ops-row-subtitle">
+                    Counted in fingerprint device attendance, excluded from employee/line attendance until registered.
+                  </div>
+                </div>
+                <StatusBadge
+                  label={`${resolvedFingerprintDeviceSummary.unregisteredDevicePins} PINs`}
+                  tone="warning"
+                />
+              </div>
+              <div className="ops-list" style={{ marginTop: 12 }}>
+                {resolvedFingerprintDeviceSummary.unregisteredPins.slice(0, 8).map((pin) => (
+                  <div key={pin.pin} className="ops-list-item compact">
+                    <div className="ops-item-header">
+                      <div>
+                        <div className="ops-item-title">PIN {pin.pin}</div>
+                        <div className="ops-row-subtitle">
+                          {pin.punchCount} punch(es) · {pin.deviceIps.join(", ") || "No device IP"}
+                        </div>
+                      </div>
+                      <StatusBadge label="Not registered" tone="warning" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {resolvedFingerprintDeviceSummary.unregisteredPins.length > 8 ? (
+                <Link to="/zkteco-fingerprint" className="ops-button ops-button-ghost" style={{ marginTop: 12 }}>
+                  <Fingerprint size={15} />
+                  View all unregistered PINs
+                </Link>
+              ) : null}
+            </>
+          ) : null}
         </Card>
 
         <Card

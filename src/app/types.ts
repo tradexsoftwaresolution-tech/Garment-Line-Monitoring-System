@@ -152,6 +152,25 @@ export interface FingerprintEvent {
   outcome: "matched" | "delayed" | "missing";
 }
 
+export interface FingerprintUnregisteredPin {
+  pin: string;
+  firstPunch: string;
+  lastPunch: string;
+  punchCount: number;
+  deviceIps: string[];
+}
+
+export interface FingerprintDeviceSummary {
+  attendanceDate: string;
+  totalDevicePins: number;
+  registeredDevicePins: number;
+  unregisteredDevicePins: number;
+  totalPunches: number;
+  registeredPunches: number;
+  unregisteredPunches: number;
+  unregisteredPins: FingerprintUnregisteredPin[];
+}
+
 export interface TimelineEvent {
   id: string;
   type: TimelineEventType;
