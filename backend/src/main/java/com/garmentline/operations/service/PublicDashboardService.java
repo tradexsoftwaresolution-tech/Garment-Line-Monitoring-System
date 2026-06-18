@@ -596,8 +596,8 @@ public class PublicDashboardService {
   }
 
   private ArrayNode selectHikvisionEvents(LocalDate attendanceDate, int limit) {
-    OffsetDateTime start = attendanceDate.atStartOfDay(ATTENDANCE_ZONE).toOffsetDateTime();
-    OffsetDateTime end = attendanceDate.plusDays(1).atStartOfDay(ATTENDANCE_ZONE).toOffsetDateTime();
+    String start = attendanceDate.atStartOfDay(ATTENDANCE_ZONE).toInstant().toString();
+    String end = attendanceDate.plusDays(1).atStartOfDay(ATTENDANCE_ZONE).toInstant().toString();
     MultiValueMap<String, String> query = new LinkedMultiValueMap<>();
     query.add("event_time", "gte." + start);
     query.add("event_time", "lt." + end);
