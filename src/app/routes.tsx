@@ -76,7 +76,11 @@ export const router = createBrowserRouter(
     },
     {
       path: "/exclusive-mr.antonio",
-      element: <IeFullDashboardPage />,
+      element: (
+        <ProtectedPage routeKey="dashboard">
+          <IeFullDashboardPage />
+        </ProtectedPage>
+      ),
     },
     {
       path: "/",
