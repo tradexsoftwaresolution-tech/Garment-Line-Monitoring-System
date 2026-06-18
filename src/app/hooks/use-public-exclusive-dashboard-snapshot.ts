@@ -1,0 +1,98 @@
+import { useCallback, useEffect, useState } from "react";
+import { getPublicExclusiveDashboardSnapshotFromBackend } from "@/lib/backend/pipeline-api";
+import { isBackendConfigured } from "@/lib/backend/env";
+import type { OperationsSnapshot } from "@/types/operations";
+
+export const EMPTY_PUBLIC_OPERATIONS_SNAPSHOT: OperationsSnapshot = {
+  attendanceOverview: {
+    attendanceDate: "",
+    totalWorkers: 0,
+    presentWorkers: 0,
+    lateWorkers: 0,
+    onLeaveWorkers: 0,
+    absentWorkers: 0,
+  },
+  departmentAttendance: [],
+  workers: [],
+  lines: [],
+  faceEvents: [],
+  fingerprintDeviceSummary: {
+    attendanceDate: "",
+    totalDevicePins: 0,
+    registeredDevicePins: 0,
+    unregisteredDevicePins: 0,
+    totalPunches: 0,
+    registeredPunches: 0,
+    unregisteredPunches: 0,
+    unregisteredPins: [],
+  },
+  fingerprintEvents: [],
+  validationRecords: [],
+  lineAssignments: [],
+  lineOutputEntries: [],
+  transferLogs: [],
+  alerts: [],
+  attendanceSummaries: [],
+  overtimeRecords: [],
+  leaveRecords: [],
+  incentiveRecords: [],
+  auditLogs: [],
+  smartInsights: [],
+  announcements: [],
+  settings: {
+    faceRecognition: true,
+    fingerprintVerification: true,
+    dualValidationRequired: true,
+    autoRejectUnknownFaces: false,
+    manualVerificationFallback: true,
+    autoMarkAbsent: false,
+    morningShiftStart: "07:30",
+    morningShiftEnd: "17:30",
+    lateArrivalThreshold: 10,
+    gracePeriod: 5,
+    failedEntryAlerts: true,
+    lowEfficiencyWarnings: true,
+    workerAbsenceAlerts: true,
+    dailySummaryReport: true,
+  },
+  reportSeries: {
+    weeklyAttendance: [],
+    departmentAttendance: [],
+    lineAttendance: [],
+    transferHistory: [],
+  },
+};
+
+export function usePublicExclusiveDashboardSnapshot(refreshMs = 10_000) {
+  const [snapshot, setSnapshot] = useState<OperationsSnapshot>(EMPTY_PUBLIC_OPERATIONS_SNAPSHOT);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    if (!isBackendConfigured()) {
+      setError("VITE_BACKEND_URL is not configured.");
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const nextSnapshot = await getPublicExclusiveDashboardSnapshotFromBackend();
+      setSnapshot(nextSnapshot);
+      setError(null);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not load dashboard data.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    const timer = window.setInterval(() => {
+      void refresh();
+    }, refreshMs);
+    return () => window.clearInterval(timer);
+  }, [refresh, refreshMs]);
+
+  return { snapshot, isLoading, error, refresh };
+}

@@ -1,4 +1,5 @@
 import type { HikvisionRecognitionEvent } from "@/types/hikvision";
+import type { FaceEvent } from "./types";
 
 const ATTENDANCE_TIME_ZONE = "Asia/Colombo";
 
@@ -23,16 +24,16 @@ function eventDateInAttendanceTimeZone(value?: string | null) {
 }
 
 export function buildHikvisionFaceEventSummary(
-  events: HikvisionRecognitionEvent[],
+  events: Array<HikvisionRecognitionEvent | FaceEvent>,
   preferredAttendanceDate?: string
 ) {
-  const fallbackDate = eventDateInAttendanceTimeZone(events[0]?.eventTime);
+  const fallbackDate = eventDateInAttendanceTimeZone(faceEventTime(events[0]));
   const attendanceDate = preferredAttendanceDate || fallbackDate;
   const dailyEvents = attendanceDate
-    ? events.filter((event) => eventDateInAttendanceTimeZone(event.eventTime) === attendanceDate)
+    ? events.filter((event) => eventDateInAttendanceTimeZone(faceEventTime(event)) === attendanceDate)
     : events;
-  const matchedEvents = dailyEvents.filter((event) => event.matchStatus === "matched");
-  const unmatchedEvents = dailyEvents.filter((event) => event.matchStatus !== "matched");
+  const matchedEvents = dailyEvents.filter((event) => faceEventMatched(event));
+  const unmatchedEvents = dailyEvents.filter((event) => !faceEventMatched(event));
 
   return {
     attendanceDate,
@@ -42,9 +43,30 @@ export function buildHikvisionFaceEventSummary(
     unmatchedEmployeeNos: Array.from(
       new Set(
         unmatchedEvents
-          .map((event) => event.employeeNo || event.devicePersonName || event.serialNo || event.id)
+          .map((event) => faceEventLabel(event))
           .filter(Boolean)
       )
     ),
   };
+}
+
+function faceEventTime(event?: HikvisionRecognitionEvent | FaceEvent) {
+  if (!event) return undefined;
+  return "eventTime" in event ? event.eventTime : event.timestamp;
+}
+
+function faceEventMatched(event: HikvisionRecognitionEvent | FaceEvent) {
+  if ("matchStatus" in event) {
+    return event.matchStatus === "matched";
+  }
+
+  return event.outcome === "matched";
+}
+
+function faceEventLabel(event: HikvisionRecognitionEvent | FaceEvent) {
+  if ("employeeNo" in event) {
+    return event.employeeNo || event.devicePersonName || event.serialNo || event.id;
+  }
+
+  return event.workerId || event.id;
 }

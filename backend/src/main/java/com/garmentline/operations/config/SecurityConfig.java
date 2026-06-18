@@ -44,6 +44,8 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers("/api/employee-portal/**")
                     .permitAll()
+                    .requestMatchers("/api/public/**")
+                    .permitAll()
                     .requestMatchers(HttpMethod.OPTIONS, "/**")
                     .permitAll()
                     .anyRequest()

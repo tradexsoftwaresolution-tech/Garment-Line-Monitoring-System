@@ -22,11 +22,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { useOperations, findLine } from "../operations-context";
 import { buildHikvisionFaceEventSummary } from "../face-event-counts";
-import { resolveFingerprintDeviceSummary } from "../fingerprint-device-counts";
-import { useHikvisionFaceEvents } from "../hooks/use-hikvision-face-events";
-import { useZktecoFingerprintEvents } from "../hooks/use-zkteco-fingerprint-events";
+import { usePublicExclusiveDashboardSnapshot } from "../hooks/use-public-exclusive-dashboard-snapshot";
 import {
   Card,
   KpiCard,
@@ -37,6 +34,7 @@ import {
   WorkerChip,
   attendanceTone,
 } from "../components/ops-ui";
+import type { ProductionLineRecord } from "../types";
 
 const EMPLOYEE_PAGE_SIZE = 50;
 
@@ -72,27 +70,26 @@ function getAntonioGreeting(date: Date) {
   return "Good night, Mr. Antonio!";
 }
 
+function findLine(lines: ProductionLineRecord[], lineId?: string) {
+  return lineId ? lines.find((line) => line.id === lineId) : undefined;
+}
+
 export function IeFullDashboardPage() {
+  const { snapshot, isLoading, error, refresh } = usePublicExclusiveDashboardSnapshot();
   const {
     attendanceOverview,
     departmentAttendance,
     fingerprintDeviceSummary,
+    faceEvents,
     lines,
     reportSeries,
     workers,
-  } = useOperations();
-  const { events: hikvisionFaceEvents } = useHikvisionFaceEvents(500);
-  const { events: zktecoFingerprintEvents } = useZktecoFingerprintEvents(5000);
+  } = snapshot;
   const [query, setQuery] = useState("");
   const [employeePage, setEmployeePage] = useState(1);
   const [currentTime, setCurrentTime] = useState(() => new Date());
 
   const greeting = useMemo(() => getAntonioGreeting(currentTime), [currentTime]);
-
-  const resolvedFingerprintDeviceSummary = useMemo(
-    () => resolveFingerprintDeviceSummary(fingerprintDeviceSummary, zktecoFingerprintEvents),
-    [fingerprintDeviceSummary, zktecoFingerprintEvents]
-  );
 
   const lineRows = useMemo(
     () =>
@@ -150,14 +147,14 @@ export function IeFullDashboardPage() {
     (worker) => worker.fingerprintVerificationStatus === "Verified"
   ).length;
   const registeredFingerprintAttended =
-    resolvedFingerprintDeviceSummary.registeredDevicePins || registeredFingerprintWorkers;
-  const unmatchedFingerprintCount = resolvedFingerprintDeviceSummary.unregisteredDevicePins;
+    fingerprintDeviceSummary.registeredDevicePins || registeredFingerprintWorkers;
+  const unmatchedFingerprintCount = fingerprintDeviceSummary.unregisteredDevicePins;
   const fingerprintAttended =
-    resolvedFingerprintDeviceSummary.totalDevicePins || registeredFingerprintAttended + unmatchedFingerprintCount;
+    fingerprintDeviceSummary.totalDevicePins || registeredFingerprintAttended + unmatchedFingerprintCount;
   const faceAttended = workers.filter((worker) => worker.faceVerificationStatus === "Verified").length;
   const faceEventSummary = useMemo(
-    () => buildHikvisionFaceEventSummary(hikvisionFaceEvents, attendanceOverview.attendanceDate),
-    [attendanceOverview.attendanceDate, hikvisionFaceEvents]
+    () => buildHikvisionFaceEventSummary(faceEvents, attendanceOverview.attendanceDate),
+    [attendanceOverview.attendanceDate, faceEvents]
   );
   const unmatchedFaceCount = faceEventSummary.unmatchedEvents;
   const overallAttended = attendanceOverview.presentWorkers + attendanceOverview.lateWorkers;
@@ -240,9 +237,18 @@ export function IeFullDashboardPage() {
             <a href="#ie-analytics" className="ops-button ops-button-primary">
               Analytics
             </a>
+            <button type="button" className="ops-button ops-button-secondary" onClick={refresh}>
+              {isLoading ? "Loading" : "Refresh"}
+            </button>
           </>
         }
       />
+
+      {error ? (
+        <div className="ops-alert-banner tone-danger">
+          Could not load public dashboard data: {error}
+        </div>
+      ) : null}
 
       <section className="ops-ie-hero">
         <div className="ops-ie-hero-copy">
