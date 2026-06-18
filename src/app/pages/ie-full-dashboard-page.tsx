@@ -1,14 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  BarChart3,
-  CheckCircle2,
-  Fingerprint,
-  LayoutDashboard,
-  PieChart as PieChartIcon,
-  ScanFace,
-  TrendingUp,
-  Users,
-} from "lucide-react";
+import { LayoutDashboard } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -26,7 +17,6 @@ import { buildHikvisionFaceEventSummary } from "../face-event-counts";
 import { usePublicExclusiveDashboardSnapshot } from "../hooks/use-public-exclusive-dashboard-snapshot";
 import {
   Card,
-  KpiCard,
   LineCard,
   PageHeader,
   SearchField,
@@ -37,6 +27,7 @@ import {
 import type { ProductionLineRecord } from "../types";
 
 const EMPLOYEE_PAGE_SIZE = 50;
+type VerificationFilter = "all" | "missing-fingerprint" | "missing-face" | "missing-both" | "fully-verified";
 
 const COLORS = {
   present: "#16a34a",
@@ -75,7 +66,7 @@ function findLine(lines: ProductionLineRecord[], lineId?: string) {
 }
 
 export function IeFullDashboardPage() {
-  const { snapshot, isLoading, error, refresh } = usePublicExclusiveDashboardSnapshot();
+  const { snapshot, isLoading, error } = usePublicExclusiveDashboardSnapshot();
   const {
     attendanceOverview,
     departmentAttendance,
@@ -86,6 +77,7 @@ export function IeFullDashboardPage() {
     workers,
   } = snapshot;
   const [query, setQuery] = useState("");
+  const [verificationFilter, setVerificationFilter] = useState<VerificationFilter>("all");
   const [employeePage, setEmployeePage] = useState(1);
   const [currentTime, setCurrentTime] = useState(() => new Date());
 
@@ -101,11 +93,41 @@ export function IeFullDashboardPage() {
     [lines]
   );
 
+  const missingFingerprintWorkers = workers.filter(
+    (worker) => worker.fingerprintVerificationStatus !== "Verified"
+  ).length;
+  const missingFaceWorkers = workers.filter((worker) => worker.faceVerificationStatus !== "Verified").length;
+  const missingBothWorkers = workers.filter(
+    (worker) => worker.fingerprintVerificationStatus !== "Verified" && worker.faceVerificationStatus !== "Verified"
+  ).length;
+  const fullyVerifiedWorkers = workers.filter(
+    (worker) => worker.fingerprintVerificationStatus === "Verified" && worker.faceVerificationStatus === "Verified"
+  ).length;
+
+  const verificationFilters: Array<{ value: VerificationFilter; label: string; count: number }> = [
+    { value: "all", label: "All", count: workers.length },
+    { value: "missing-fingerprint", label: "No Finger", count: missingFingerprintWorkers },
+    { value: "missing-face", label: "No Face", count: missingFaceWorkers },
+    { value: "missing-both", label: "Missing Both", count: missingBothWorkers },
+    { value: "fully-verified", label: "Both Attended", count: fullyVerifiedWorkers },
+  ];
+
   const filteredWorkers = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    if (!normalized) return workers;
 
     return workers.filter((worker) => {
+      const fingerprintVerified = worker.fingerprintVerificationStatus === "Verified";
+      const faceVerified = worker.faceVerificationStatus === "Verified";
+      const matchesVerificationFilter =
+        verificationFilter === "all" ||
+        (verificationFilter === "missing-fingerprint" && !fingerprintVerified) ||
+        (verificationFilter === "missing-face" && !faceVerified) ||
+        (verificationFilter === "missing-both" && !fingerprintVerified && !faceVerified) ||
+        (verificationFilter === "fully-verified" && fingerprintVerified && faceVerified);
+
+      if (!matchesVerificationFilter) return false;
+      if (!normalized) return true;
+
       const line = findLine(lines, worker.currentLineId);
       return [
         worker.fullName,
@@ -120,7 +142,7 @@ export function IeFullDashboardPage() {
         .toLowerCase()
         .includes(normalized);
     });
-  }, [lines, query, workers]);
+  }, [lines, query, verificationFilter, workers]);
 
   const totalEmployeePages = Math.max(1, Math.ceil(filteredWorkers.length / EMPLOYEE_PAGE_SIZE));
   const pagedWorkers = useMemo(() => {
@@ -132,7 +154,7 @@ export function IeFullDashboardPage() {
 
   useEffect(() => {
     setEmployeePage(1);
-  }, [query]);
+  }, [query, verificationFilter]);
 
   useEffect(() => {
     setEmployeePage((current) => Math.min(current, totalEmployeePages));
@@ -167,8 +189,6 @@ export function IeFullDashboardPage() {
     lines.length === 0
       ? 0
       : Math.round(lines.reduce((sum, line) => sum + line.attendanceRate, 0) / lines.length);
-  const bestLine = [...lines].sort((a, b) => b.attendanceRate - a.attendanceRate)[0];
-  const lowestLine = [...lines].sort((a, b) => a.attendanceRate - b.attendanceRate)[0];
 
   const statusData = useMemo(
     () => [
@@ -186,16 +206,23 @@ export function IeFullDashboardPage() {
         label: "Fingerprint",
         attended: registeredFingerprintAttended,
         unmatched: unmatchedFingerprintCount,
-        missing: workers.filter((worker) => worker.fingerprintVerificationStatus !== "Verified").length,
+        missing: missingFingerprintWorkers,
       },
       {
         label: "Face",
         attended: faceAttended,
         unmatched: unmatchedFaceCount,
-        missing: workers.filter((worker) => worker.faceVerificationStatus !== "Verified").length,
+        missing: missingFaceWorkers,
       },
     ],
-    [faceAttended, registeredFingerprintAttended, unmatchedFaceCount, unmatchedFingerprintCount, workers]
+    [
+      faceAttended,
+      missingFaceWorkers,
+      missingFingerprintWorkers,
+      registeredFingerprintAttended,
+      unmatchedFaceCount,
+      unmatchedFingerprintCount,
+    ]
   );
 
   const lineChartData = useMemo(
@@ -225,23 +252,7 @@ export function IeFullDashboardPage() {
         <div className="ops-page ops-ie-full-dashboard">
       <PageHeader
         title="Exclusive Operations Dashboard"
-        subtitle=""
-        actions={
-          <>
-            <a href="#ie-verification" className="ops-button ops-button-secondary">
-              Employees
-            </a>
-            <a href="#ie-lines" className="ops-button ops-button-secondary">
-              Lines
-            </a>
-            <a href="#ie-analytics" className="ops-button ops-button-primary">
-              Analytics
-            </a>
-            <button type="button" className="ops-button ops-button-secondary" onClick={refresh}>
-              {isLoading ? "Loading" : "Refresh"}
-            </button>
-          </>
-        }
+        subtitle={isLoading ? "Refreshing live factory attendance..." : "Live factory attendance, verification, and line readiness."}
       />
 
       {error ? (
@@ -278,54 +289,56 @@ export function IeFullDashboardPage() {
         </div>
       </section>
 
-      <section className="ops-kpi-grid">
-        <KpiCard
-          label="Total Employees"
-          value={`${attendanceOverview.totalWorkers}`}
-          meta="Active employee records available for IE review."
-          icon={Users}
-          accent="var(--ops-primary)"
-          soft="var(--ops-primary-soft)"
-        />
-        <KpiCard
-          label="Overall Attendance"
-          value={`${overallAttended}/${attendanceOverview.totalWorkers}`}
-          meta={`${attendanceOverview.absentWorkers} absent and ${attendanceOverview.onLeaveWorkers} on leave.`}
-          icon={CheckCircle2}
-          accent="var(--ops-success)"
-          soft="var(--ops-success-soft)"
-        />
-        <KpiCard
-          label="Fingerprint Attended"
-          value={`${fingerprintAttended}`}
-          meta={`${registeredFingerprintAttended} registered, ${unmatchedFingerprintCount} unmatched PINs included.`}
-          icon={Fingerprint}
-          accent="var(--ops-violet)"
-          soft="var(--ops-violet-soft)"
-        />
-        <KpiCard
-          label="Face Attended"
-          value={`${faceAttended}`}
-          meta={`${faceAttended} matched workers, ${unmatchedFaceCount} unmatched face events.`}
-          icon={ScanFace}
-          accent="var(--ops-warning)"
-          soft="var(--ops-warning-soft)"
-        />
+      <section className="ops-exclusive-quick-stats" aria-label="Factory attendance summary">
+        <div className="ops-exclusive-quick-stat">
+          <span>Total Employees</span>
+          <strong>{attendanceOverview.totalWorkers}</strong>
+        </div>
+        <div className="ops-exclusive-quick-stat">
+          <span>Overall Attendance</span>
+          <strong>
+            {overallAttended}/{attendanceOverview.totalWorkers}
+          </strong>
+        </div>
+        <div className="ops-exclusive-quick-stat">
+          <span>Fingerprint Attended</span>
+          <strong>{fingerprintAttended}</strong>
+          <small>{unmatchedFingerprintCount} unmatched PINs</small>
+        </div>
+        <div className="ops-exclusive-quick-stat">
+          <span>Face Attended</span>
+          <strong>{faceAttended}</strong>
+          <small>{unmatchedFaceCount} unmatched face events</small>
+        </div>
       </section>
 
       <Card
         title="Employee Attendance Verification"
         subtitle="Every active employee with image, department, current line, fingerprint status, face status, and overall attendance."
-        actions={
-          <>
-            <StatusBadge label={`${unmatchedFingerprintCount} unmatched fingerprint PINs`} tone="warning" />
-            <StatusBadge label={`${unmatchedFaceCount} unmatched face events`} tone="warning" />
-            <SearchField value={query} onChange={setQuery} placeholder="Search employee, line, or department" />
-          </>
-        }
       >
         <div id="ie-verification" className="ops-section-anchor" />
-        <div className="ops-table-wrap" style={{ maxHeight: 620, overflow: "auto" }}>
+        <div className="ops-exclusive-sticky-controls">
+          <div className="ops-exclusive-status-row">
+            <StatusBadge label={`${unmatchedFingerprintCount} unmatched fingerprint PINs`} tone="warning" />
+            <StatusBadge label={`${unmatchedFaceCount} unmatched face events`} tone="warning" />
+          </div>
+          <SearchField value={query} onChange={setQuery} placeholder="Search employee, line, or department" />
+          <div className="ops-exclusive-filter-row" role="group" aria-label="Employee verification filters">
+            {verificationFilters.map((filter) => (
+              <button
+                key={filter.value}
+                type="button"
+                className={`ops-exclusive-filter-chip${verificationFilter === filter.value ? " is-active" : ""}`}
+                onClick={() => setVerificationFilter(filter.value)}
+              >
+                <span>{filter.label}</span>
+                <strong>{filter.count}</strong>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="ops-table-wrap ops-exclusive-employee-table" style={{ maxHeight: 620, overflow: "auto" }}>
           <table className="ops-table">
             <thead>
               <tr>
@@ -368,6 +381,34 @@ export function IeFullDashboardPage() {
             </tbody>
           </table>
         </div>
+        <div className="ops-exclusive-employee-mobile-list">
+          {pagedWorkers.map((worker) => {
+            const line = findLine(lines, worker.currentLineId);
+            const fingerprintVerified = worker.fingerprintVerificationStatus === "Verified";
+            const faceVerified = worker.faceVerificationStatus === "Verified";
+
+            return (
+              <article key={worker.id} className="ops-exclusive-employee-card">
+                <WorkerChip worker={worker} />
+                <div className="ops-exclusive-employee-meta">
+                  <span>{worker.department}</span>
+                  <span>{line ? `${line.name} · ${line.code}` : "Unassigned"}</span>
+                </div>
+                <div className="ops-exclusive-employee-badges">
+                  <StatusBadge
+                    label={`Finger: ${verificationLabel(fingerprintVerified)}`}
+                    tone={verificationTone(fingerprintVerified)}
+                  />
+                  <StatusBadge
+                    label={`Face: ${verificationLabel(faceVerified)}`}
+                    tone={verificationTone(faceVerified)}
+                  />
+                  <StatusBadge label={worker.attendanceStatus} tone={attendanceTone(worker.attendanceStatus)} />
+                </div>
+              </article>
+            );
+          })}
+        </div>
         <div className="ops-pagination-bar">
           <div className="ops-row-subtitle">
             Showing {employeeStart}-{employeeEnd} of {filteredWorkers.length} employees
@@ -396,39 +437,24 @@ export function IeFullDashboardPage() {
         </div>
       </Card>
 
-      <section className="ops-kpi-grid" id="ie-lines">
-        <KpiCard
-          label="Lines Tracked"
-          value={`${lineRows.length}`}
-          meta="Active production lines in the current roster."
-          icon={Users}
-          accent="var(--ops-primary)"
-          soft="var(--ops-primary-soft)"
-        />
-        <KpiCard
-          label="Assigned Workers"
-          value={`${assignedWorkers}`}
-          meta="Workers currently mapped to active production lines."
-          icon={Users}
-          accent="var(--ops-success)"
-          soft="var(--ops-success-soft)"
-        />
-        <KpiCard
-          label="Came Today"
-          value={`${cameToday}`}
-          meta={`${attendanceOverview.absentWorkers} active workers are not currently present.`}
-          icon={Users}
-          accent="var(--ops-warning)"
-          soft="var(--ops-warning-soft)"
-        />
-        <KpiCard
-          label="Line Attendance"
-          value={`${lineAttendance}%`}
-          meta={`${criticalLines} critical line(s) need review.`}
-          icon={Users}
-          accent="var(--ops-violet)"
-          soft="var(--ops-violet-soft)"
-        />
+      <section className="ops-exclusive-section-rail" id="ie-lines">
+        <div>
+          <span>Lines Tracked</span>
+          <strong>{lineRows.length}</strong>
+        </div>
+        <div>
+          <span>Assigned Workers</span>
+          <strong>{assignedWorkers}</strong>
+        </div>
+        <div>
+          <span>Came Today</span>
+          <strong>{cameToday}</strong>
+        </div>
+        <div>
+          <span>Line Attendance</span>
+          <strong>{lineAttendance}%</strong>
+          <small>{criticalLines} critical line(s)</small>
+        </div>
       </section>
 
       <Card title="Line Attendance Table" subtitle="Attendance detail by production line.">
@@ -488,11 +514,6 @@ export function IeFullDashboardPage() {
             <div key={line.id} className="ops-card-link ops-static-card">
               <LineCard
                 line={line}
-                actions={
-                  <span className="ops-button ops-button-secondary">
-                    Machine Spots Summary
-                  </span>
-                }
               >
                 <div className="ops-list" style={{ marginTop: 16, maxHeight: 260, overflow: "auto" }}>
                   {lineWorkers.slice(0, 8).map((worker) => (
@@ -513,39 +534,23 @@ export function IeFullDashboardPage() {
         })}
       </section>
 
-      <section className="ops-kpi-grid" id="ie-analytics">
-        <KpiCard
-          label="Average Line Attendance"
-          value={`${averageLineAttendance}%`}
-          meta="Average attendance percentage across active lines."
-          icon={TrendingUp}
-          accent="var(--ops-primary)"
-          soft="var(--ops-primary-soft)"
-        />
-        <KpiCard
-          label="Best Line"
-          value={bestLine ? `${bestLine.attendanceRate}%` : "0%"}
-          meta={bestLine ? `${bestLine.name} has the strongest attendance.` : "No line data available."}
-          icon={BarChart3}
-          accent="var(--ops-success)"
-          soft="var(--ops-success-soft)"
-        />
-        <KpiCard
-          label="Lowest Line"
-          value={lowestLine ? `${lowestLine.attendanceRate}%` : "0%"}
-          meta={lowestLine ? `${lowestLine.name} needs the most attention.` : "No line data available."}
-          icon={PieChartIcon}
-          accent="var(--ops-danger)"
-          soft="var(--ops-danger-soft)"
-        />
-        <KpiCard
-          label="Total Workforce"
-          value={`${attendanceOverview.totalWorkers}`}
-          meta="Active employees included in the analytics view."
-          icon={Users}
-          accent="var(--ops-violet)"
-          soft="var(--ops-violet-soft)"
-        />
+      <section className="ops-exclusive-section-rail" id="ie-analytics">
+        <div>
+          <span>Average Line Attendance</span>
+          <strong>{averageLineAttendance}%</strong>
+        </div>
+        <div>
+          <span>Present Workers</span>
+          <strong>{overallAttended}</strong>
+        </div>
+        <div>
+          <span>Late Workers</span>
+          <strong>{attendanceOverview.lateWorkers}</strong>
+        </div>
+        <div>
+          <span>Absent Workers</span>
+          <strong>{attendanceOverview.absentWorkers}</strong>
+        </div>
       </section>
 
       <section className="ops-grid cols-2">

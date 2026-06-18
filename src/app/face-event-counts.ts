@@ -52,11 +52,11 @@ export function buildHikvisionFaceEventSummary(
 
 function faceEventTime(event?: HikvisionRecognitionEvent | FaceEvent) {
   if (!event) return undefined;
-  return "eventTime" in event ? event.eventTime : event.timestamp;
+  return isHikvisionRecognitionEvent(event) ? event.eventTime : event.timestamp;
 }
 
 function faceEventMatched(event: HikvisionRecognitionEvent | FaceEvent) {
-  if ("matchStatus" in event) {
+  if (isHikvisionRecognitionEvent(event)) {
     return event.matchStatus === "matched";
   }
 
@@ -64,9 +64,13 @@ function faceEventMatched(event: HikvisionRecognitionEvent | FaceEvent) {
 }
 
 function faceEventLabel(event: HikvisionRecognitionEvent | FaceEvent) {
-  if ("employeeNo" in event) {
+  if (isHikvisionRecognitionEvent(event)) {
     return event.employeeNo || event.devicePersonName || event.serialNo || event.id;
   }
 
   return event.workerId || event.id;
+}
+
+function isHikvisionRecognitionEvent(event: HikvisionRecognitionEvent | FaceEvent): event is HikvisionRecognitionEvent {
+  return "eventTime" in event;
 }
