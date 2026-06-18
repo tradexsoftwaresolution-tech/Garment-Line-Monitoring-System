@@ -252,7 +252,7 @@ export function IeFullDashboardPage() {
         <div className="ops-page ops-ie-full-dashboard">
       <PageHeader
         title="Exclusive Operations Dashboard"
-        subtitle={isLoading ? "Refreshing live factory attendance..." : "Live factory attendance, verification, and line readiness."}
+        subtitle={isLoading ? "Refreshing live factory attendance..." : ""}
       />
 
       {error ? (
@@ -267,7 +267,6 @@ export function IeFullDashboardPage() {
             <LayoutDashboard size={15} />
             Industrial Engineering Control View
           </div>
-          <h2>Attendance, line readiness, and verification coverage in one live dashboard.</h2>
         </div>
         <div className="ops-ie-hero-stats">
           <div className="ops-stat-tile">
