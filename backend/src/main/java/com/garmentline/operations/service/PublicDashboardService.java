@@ -32,8 +32,8 @@ public class PublicDashboardService {
     this.supabaseAdminClient = supabaseAdminClient;
   }
 
-  public Map<String, Object> exclusiveDashboardSnapshot() {
-    LocalDate attendanceDate = latestAttendanceDate();
+  public Map<String, Object> exclusiveDashboardSnapshot(String requestedAttendanceDate) {
+    LocalDate attendanceDate = requestedAttendanceDate(requestedAttendanceDate);
     String attendanceDateText = attendanceDate.toString();
 
     List<JsonNode> employees =
@@ -132,6 +132,18 @@ public class PublicDashboardService {
             "lineAttendance", lineSeries(lines),
             "transferHistory", List.of()));
     return snapshot;
+  }
+
+  private LocalDate requestedAttendanceDate(String requestedAttendanceDate) {
+    if (!hasText(requestedAttendanceDate)) {
+      return latestAttendanceDate();
+    }
+
+    try {
+      return LocalDate.parse(requestedAttendanceDate.trim());
+    } catch (RuntimeException ignored) {
+      return latestAttendanceDate();
+    }
   }
 
   private LocalDate latestAttendanceDate() {

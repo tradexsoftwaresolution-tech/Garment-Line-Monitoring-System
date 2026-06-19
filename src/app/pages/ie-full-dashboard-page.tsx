@@ -81,6 +81,13 @@ function formatDateLabel(value?: string) {
   });
 }
 
+function formatDateInput(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function formatClock(value: Date) {
   return value.toLocaleTimeString("en-GB", {
     hour: "2-digit",
@@ -171,7 +178,12 @@ function employeePriority(worker: WorkerProfile) {
 }
 
 export function IeFullDashboardPage() {
-  const { snapshot, isLoading, error, refresh } = usePublicExclusiveDashboardSnapshot();
+  const [selectedAttendanceDate, setSelectedAttendanceDate] = useState("");
+  const isHistoricalMode = Boolean(selectedAttendanceDate);
+  const { snapshot, isLoading, error, refresh } = usePublicExclusiveDashboardSnapshot(
+    selectedAttendanceDate || undefined,
+    isHistoricalMode ? 0 : 10_000
+  );
   const {
     attendanceOverview,
     fingerprintDeviceSummary,
@@ -192,6 +204,7 @@ export function IeFullDashboardPage() {
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
 
   const greeting = useMemo(() => getAntonioGreeting(currentTime), [currentTime]);
+  const todayInputValue = useMemo(() => formatDateInput(new Date()), []);
 
   const lineRows = useMemo(
     () =>
@@ -378,6 +391,10 @@ export function IeFullDashboardPage() {
     setLastUpdated(new Date());
   }, [refresh]);
 
+  const handleLiveMode = useCallback(() => {
+    setSelectedAttendanceDate("");
+  }, []);
+
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date()), 60_000);
     return () => window.clearInterval(timer);
@@ -396,6 +413,13 @@ export function IeFullDashboardPage() {
   useEffect(() => {
     setEmployeeVisibleCount(EMPLOYEE_PAGE_SIZE);
   }, [employeeFilter, employeeQuery]);
+
+  useEffect(() => {
+    setSelectedWorkerId(null);
+    setSelectedLineId(null);
+    setMismatchVisibleCount(MISMATCH_PAGE_SIZE);
+    setEmployeeVisibleCount(EMPLOYEE_PAGE_SIZE);
+  }, [selectedAttendanceDate]);
 
   useEffect(() => {
     if (selectedWorkerId && !workers.some((worker) => worker.id === selectedWorkerId)) {
@@ -421,9 +445,17 @@ export function IeFullDashboardPage() {
               </div>
               <h1>{greeting}</h1>
             </div>
-            <span className={`ops-ceo-live-chip tone-${error ? "danger" : factoryTone}`}>
+            <span className={`ops-ceo-live-chip tone-${error ? "danger" : isHistoricalMode ? "neutral" : factoryTone}`}>
               <span className="ops-live-dot" />
-              {error ? "Offline" : factoryTone === "good" ? "Green" : factoryTone === "warning" ? "Amber" : "Red"}
+              {error
+                ? "Offline"
+                : isHistoricalMode
+                  ? "History"
+                  : factoryTone === "good"
+                    ? "Green"
+                    : factoryTone === "warning"
+                      ? "Amber"
+                      : "Red"}
             </span>
           </div>
 
@@ -432,6 +464,21 @@ export function IeFullDashboardPage() {
               <CalendarDays size={17} />
               {formatDateLabel(attendanceOverview.attendanceDate)}
             </span>
+            <label className="ops-ceo-date-picker">
+              <CalendarDays size={16} />
+              <input
+                type="date"
+                value={selectedAttendanceDate || attendanceOverview.attendanceDate || ""}
+                max={todayInputValue}
+                onChange={(event) => setSelectedAttendanceDate(event.target.value)}
+                aria-label="Attendance date"
+              />
+            </label>
+            {isHistoricalMode ? (
+              <button type="button" className="ops-ceo-live-mode-button" onClick={handleLiveMode}>
+                Live
+              </button>
+            ) : null}
             <span>
               <Clock3 size={17} />
               Last updated {formatClock(lastUpdated)}
