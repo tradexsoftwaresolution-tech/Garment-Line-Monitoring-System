@@ -1,51 +1,58 @@
-import { useEffect, useMemo, useState } from "react";
-import { LayoutDashboard } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+  AlertTriangle,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  Clock3,
+  Factory,
+  Fingerprint,
+  RefreshCw,
+  ScanFace,
+  Search,
+  ShieldAlert,
+  type LucideIcon,
+  UserX,
+  Users,
+} from "lucide-react";
 import { buildHikvisionFaceEventSummary } from "../face-event-counts";
 import { usePublicExclusiveDashboardSnapshot } from "../hooks/use-public-exclusive-dashboard-snapshot";
-import {
-  Card,
-  LineCard,
-  PageHeader,
-  SearchField,
-  StatusBadge,
-  WorkerChip,
-  attendanceTone,
-} from "../components/ops-ui";
-import type { ProductionLineRecord } from "../types";
+import type { ProductionLineRecord, WorkerProfile } from "../types";
 
-const EMPLOYEE_PAGE_SIZE = 50;
-type VerificationFilter = "all" | "missing-fingerprint" | "missing-face" | "missing-both" | "fully-verified";
+type Tone = "good" | "warning" | "danger" | "info" | "neutral";
+type TabId = "today" | "mismatch" | "employees" | "lines";
+type MismatchFilter = "all" | "fingerprint" | "face";
+type EmployeeFilter = "attention" | "absent" | "late" | "present";
 
-const COLORS = {
-  present: "#16a34a",
-  late: "#d97706",
-  leave: "#2563eb",
-  absent: "#dc2626",
-  face: "#7c3aed",
-  fingerprint: "#0f766e",
-  total: "#94a3b8",
+type Issue = {
+  id: string;
+  title: string;
+  detail: string;
+  tone: Tone;
 };
 
-function verificationLabel(verified: boolean) {
-  return verified ? "Attended" : "Not attended";
-}
+const NAV_ITEMS = [
+  { id: "today", label: "Today", icon: CalendarDays },
+  { id: "mismatch", label: "Mismatch", icon: Fingerprint },
+  { id: "employees", label: "Employees", icon: Users },
+  { id: "lines", label: "Lines", icon: Factory },
+] satisfies Array<{ id: TabId; label: string; icon: LucideIcon }>;
 
-function verificationTone(verified: boolean) {
-  return verified ? "success" : "danger";
-}
+const MISMATCH_FILTERS = [
+  { id: "all", label: "All" },
+  { id: "fingerprint", label: "Fingerprint only" },
+  { id: "face", label: "Face only" },
+] satisfies Array<{ id: MismatchFilter; label: string }>;
+
+const EMPLOYEE_FILTERS = [
+  { id: "attention", label: "Need attention" },
+  { id: "absent", label: "Absent" },
+  { id: "late", label: "Late" },
+  { id: "present", label: "Present" },
+] satisfies Array<{ id: EmployeeFilter; label: string }>;
+
+const MISMATCH_PAGE_SIZE = 10;
+const EMPLOYEE_PAGE_SIZE = 20;
 
 function lineNumber(line: { code: string; name: string }) {
   const match = `${line.code} ${line.name}`.match(/\d+/);
@@ -55,31 +62,132 @@ function lineNumber(line: { code: string; name: string }) {
 function getAntonioGreeting(date: Date) {
   const hour = date.getHours();
 
-  if (hour >= 5 && hour < 12) return "Good morning, Mr. Antonio!";
-  if (hour >= 12 && hour < 17) return "Good afternoon, Mr. Antonio!";
-  if (hour >= 17 && hour < 21) return "Good evening, Mr. Antonio!";
-  return "Good night, Mr. Antonio!";
+  if (hour >= 5 && hour < 12) return "Good morning, Mr. Antonio";
+  if (hour >= 12 && hour < 17) return "Good afternoon, Mr. Antonio";
+  if (hour >= 17 && hour < 21) return "Good evening, Mr. Antonio";
+  return "Good night, Mr. Antonio";
+}
+
+function formatDateLabel(value?: string) {
+  if (!value) return "Today";
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return value;
+
+  return new Date(year, month - 1, day).toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+  });
+}
+
+function formatClock(value: Date) {
+  return value.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("en-LK").format(value);
+}
+
+function plural(count: number, singular: string, pluralText = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : pluralText}`;
+}
+
+function lineTone(line: ProductionLineRecord): Tone {
+  if (line.risk === "Critical" || line.attendanceRate < 70) return "danger";
+  if (line.risk === "Watch" || line.attendanceRate < 85) return "warning";
+  return "good";
+}
+
+function lineRiskLabel(line: ProductionLineRecord) {
+  if (line.risk === "Critical" || line.attendanceRate < 70) return "Red";
+  if (line.risk === "Watch" || line.attendanceRate < 85) return "Amber";
+  return "Green";
 }
 
 function findLine(lines: ProductionLineRecord[], lineId?: string) {
   return lineId ? lines.find((line) => line.id === lineId) : undefined;
 }
 
+function isVerified(value?: string) {
+  return value === "Verified";
+}
+
+function yesNo(value: boolean) {
+  return value ? "Yes" : "No";
+}
+
+function mismatchKind(worker: {
+  faceVerificationStatus: string;
+  fingerprintVerificationStatus: string;
+}) {
+  const fingerprintVerified = isVerified(worker.fingerprintVerificationStatus);
+  const faceVerified = isVerified(worker.faceVerificationStatus);
+
+  if (fingerprintVerified && !faceVerified) return "fingerprint";
+  if (faceVerified && !fingerprintVerified) return "face";
+  return "none";
+}
+
+function mismatchLabel(worker: {
+  faceVerificationStatus: string;
+  fingerprintVerificationStatus: string;
+}) {
+  const kind = mismatchKind(worker);
+  if (kind === "fingerprint") return "Fingerprint only";
+  if (kind === "face") return "Face only";
+  return "Needs review";
+}
+
+function normalizeSearch(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function workerSearchText(worker: WorkerProfile, line?: ProductionLineRecord) {
+  return [
+    worker.fullName,
+    worker.employeeId,
+    worker.department,
+    worker.roleTitle,
+    worker.attendanceStatus,
+    worker.faceVerificationStatus,
+    worker.fingerprintVerificationStatus,
+    line?.name,
+    line?.code,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function employeePriority(worker: WorkerProfile) {
+  if (mismatchKind(worker) !== "none") return 0;
+  if (worker.attendanceStatus === "Absent") return 1;
+  if (worker.attendanceStatus === "Late") return 2;
+  return 3;
+}
+
 export function IeFullDashboardPage() {
-  const { snapshot, isLoading, error } = usePublicExclusiveDashboardSnapshot();
+  const { snapshot, isLoading, error, refresh } = usePublicExclusiveDashboardSnapshot();
   const {
     attendanceOverview,
-    departmentAttendance,
     fingerprintDeviceSummary,
     faceEvents,
     lines,
-    reportSeries,
     workers,
   } = snapshot;
-  const [query, setQuery] = useState("");
-  const [verificationFilter, setVerificationFilter] = useState<VerificationFilter>("all");
-  const [employeePage, setEmployeePage] = useState(1);
+  const [activeTab, setActiveTab] = useState<TabId>("today");
   const [currentTime, setCurrentTime] = useState(() => new Date());
+  const [lastUpdated, setLastUpdated] = useState(() => new Date());
+  const [mismatchFilter, setMismatchFilter] = useState<MismatchFilter>("all");
+  const [mismatchQuery, setMismatchQuery] = useState("");
+  const [mismatchVisibleCount, setMismatchVisibleCount] = useState(MISMATCH_PAGE_SIZE);
+  const [employeeFilter, setEmployeeFilter] = useState<EmployeeFilter>("attention");
+  const [employeeQuery, setEmployeeQuery] = useState("");
+  const [employeeVisibleCount, setEmployeeVisibleCount] = useState(EMPLOYEE_PAGE_SIZE);
+  const [expandedLineIds, setExpandedLineIds] = useState<Set<string>>(() => new Set());
 
   const greeting = useMemo(() => getAntonioGreeting(currentTime), [currentTime]);
 
@@ -93,569 +201,559 @@ export function IeFullDashboardPage() {
     [lines]
   );
 
-  const missingFingerprintWorkers = workers.filter(
-    (worker) => worker.fingerprintVerificationStatus !== "Verified"
-  ).length;
-  const missingFaceWorkers = workers.filter((worker) => worker.faceVerificationStatus !== "Verified").length;
-  const missingBothWorkers = workers.filter(
-    (worker) => worker.fingerprintVerificationStatus !== "Verified" && worker.faceVerificationStatus !== "Verified"
-  ).length;
-  const fullyVerifiedWorkers = workers.filter(
-    (worker) => worker.fingerprintVerificationStatus === "Verified" && worker.faceVerificationStatus === "Verified"
-  ).length;
+  const faceEventSummary = useMemo(
+    () => buildHikvisionFaceEventSummary(faceEvents, attendanceOverview.attendanceDate),
+    [attendanceOverview.attendanceDate, faceEvents]
+  );
 
-  const verificationFilters: Array<{ value: VerificationFilter; label: string; count: number }> = [
-    { value: "all", label: "All", count: workers.length },
-    { value: "missing-fingerprint", label: "No Finger", count: missingFingerprintWorkers },
-    { value: "missing-face", label: "No Face", count: missingFaceWorkers },
-    { value: "missing-both", label: "Missing Both", count: missingBothWorkers },
-    { value: "fully-verified", label: "Both Attended", count: fullyVerifiedWorkers },
-  ];
+  const overallAttended = attendanceOverview.presentWorkers + attendanceOverview.lateWorkers;
+  const attendanceRate =
+    attendanceOverview.totalWorkers === 0
+      ? 0
+      : Math.round((overallAttended / attendanceOverview.totalWorkers) * 100);
+  const assignedWorkers = lineRows.reduce((sum, line) => sum + line.assignedWorkers, 0);
+  const cameToday = lineRows.reduce((sum, line) => sum + line.presentWorkers + line.lateWorkers, 0);
+  const lineAttendance = assignedWorkers === 0 ? 0 : Math.round((cameToday / assignedWorkers) * 100);
+  const redLines = lineRows.filter((line) => lineTone(line) === "danger");
+  const amberLines = lineRows.filter((line) => lineTone(line) === "warning");
+  const unmatchedAttendanceChecks =
+    fingerprintDeviceSummary.unregisteredDevicePins + faceEventSummary.unmatchedEvents;
 
-  const filteredWorkers = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
+  const factoryTone: Tone =
+    redLines.length > 0 || attendanceRate < 70
+      ? "danger"
+      : amberLines.length > 0 || attendanceOverview.absentWorkers > 0 || attendanceRate < 90
+        ? "warning"
+        : "good";
 
-    return workers.filter((worker) => {
-      const fingerprintVerified = worker.fingerprintVerificationStatus === "Verified";
-      const faceVerified = worker.faceVerificationStatus === "Verified";
-      const matchesVerificationFilter =
-        verificationFilter === "all" ||
-        (verificationFilter === "missing-fingerprint" && !fingerprintVerified) ||
-        (verificationFilter === "missing-face" && !faceVerified) ||
-        (verificationFilter === "missing-both" && !fingerprintVerified && !faceVerified) ||
-        (verificationFilter === "fully-verified" && fingerprintVerified && faceVerified);
+  const mismatchWorkers = useMemo(
+    () =>
+      workers
+        .filter((worker) => mismatchKind(worker) !== "none")
+        .sort((a, b) => {
+          const labelDelta = mismatchLabel(a).localeCompare(mismatchLabel(b));
+          if (labelDelta !== 0) return labelDelta;
+          return a.fullName.localeCompare(b.fullName);
+        }),
+    [workers]
+  );
 
-      if (!matchesVerificationFilter) return false;
-      if (!normalized) return true;
+  const filteredMismatchWorkers = useMemo(() => {
+    const normalized = normalizeSearch(mismatchQuery);
 
+    return mismatchWorkers.filter((worker) => {
+      const kind = mismatchKind(worker);
       const line = findLine(lines, worker.currentLineId);
-      return [
-        worker.fullName,
-        worker.employeeId,
-        worker.department,
-        worker.roleTitle,
-        line?.name,
-        line?.code,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(normalized);
+      if (mismatchFilter !== "all" && kind !== mismatchFilter) return false;
+      if (!normalized) return true;
+      return `${workerSearchText(worker, line)} ${mismatchLabel(worker).toLowerCase()}`.includes(normalized);
     });
-  }, [lines, query, verificationFilter, workers]);
+  }, [lines, mismatchFilter, mismatchQuery, mismatchWorkers]);
 
-  const totalEmployeePages = Math.max(1, Math.ceil(filteredWorkers.length / EMPLOYEE_PAGE_SIZE));
-  const pagedWorkers = useMemo(() => {
-    const start = (employeePage - 1) * EMPLOYEE_PAGE_SIZE;
-    return filteredWorkers.slice(start, start + EMPLOYEE_PAGE_SIZE);
-  }, [employeePage, filteredWorkers]);
-  const employeeStart = filteredWorkers.length === 0 ? 0 : (employeePage - 1) * EMPLOYEE_PAGE_SIZE + 1;
-  const employeeEnd = Math.min(employeePage * EMPLOYEE_PAGE_SIZE, filteredWorkers.length);
+  const employeeRows = useMemo(() => {
+    const normalized = normalizeSearch(employeeQuery);
 
-  useEffect(() => {
-    setEmployeePage(1);
-  }, [query, verificationFilter]);
+    return workers
+      .filter((worker) => {
+        const hasMismatch = mismatchKind(worker) !== "none";
+        if (employeeFilter === "attention") {
+          return hasMismatch || worker.attendanceStatus === "Absent" || worker.attendanceStatus === "Late";
+        }
+        if (employeeFilter === "absent") return worker.attendanceStatus === "Absent";
+        if (employeeFilter === "late") return worker.attendanceStatus === "Late";
+        return worker.attendanceStatus === "Present";
+      })
+      .filter((worker) => {
+        if (!normalized) return true;
+        return workerSearchText(worker, findLine(lines, worker.currentLineId)).includes(normalized);
+      })
+      .sort((a, b) => {
+        const priorityDelta = employeePriority(a) - employeePriority(b);
+        if (priorityDelta !== 0) return priorityDelta;
+        return a.fullName.localeCompare(b.fullName);
+      });
+  }, [employeeFilter, employeeQuery, lines, workers]);
 
-  useEffect(() => {
-    setEmployeePage((current) => Math.min(current, totalEmployeePages));
-  }, [totalEmployeePages]);
+  const lineRiskRows = useMemo(
+    () =>
+      [...lineRows].sort((a, b) => {
+        const toneRank = { danger: 0, warning: 1, good: 2, info: 3, neutral: 4 };
+        const toneDelta = toneRank[lineTone(a)] - toneRank[lineTone(b)];
+        if (toneDelta !== 0) return toneDelta;
+        const absentDelta = b.absentWorkers - a.absentWorkers;
+        if (absentDelta !== 0) return absentDelta;
+        return lineNumber(a) - lineNumber(b);
+      }),
+    [lineRows]
+  );
+
+  const urgentIssues = useMemo<Issue[]>(() => {
+    const issues: Issue[] = [];
+    const lowestLine = [...lineRows].sort((a, b) => a.attendanceRate - b.attendanceRate)[0];
+
+    if (mismatchWorkers.length > 0) {
+      issues.push({
+        id: "employee-mismatches",
+        title: `${plural(mismatchWorkers.length, "employee")} mismatch`,
+        detail: mismatchWorkers.map((worker) => worker.fullName).slice(0, 3).join(", "),
+        tone: "danger",
+      });
+    }
+
+    if (redLines.length > 0) {
+      issues.push({
+        id: "red-lines",
+        title: `${plural(redLines.length, "line")} in red`,
+        detail: redLines.map((line) => line.name).slice(0, 3).join(", "),
+        tone: "danger",
+      });
+    }
+
+    if (attendanceOverview.absentWorkers > 0) {
+      issues.push({
+        id: "absent",
+        title: `${attendanceOverview.absentWorkers} absent today`,
+        detail: `${attendanceOverview.totalWorkers} workers in today's list`,
+        tone: attendanceOverview.absentWorkers >= 10 ? "danger" : "warning",
+      });
+    }
+
+    if (attendanceOverview.lateWorkers > 0) {
+      issues.push({
+        id: "late",
+        title: `${attendanceOverview.lateWorkers} late arrivals`,
+        detail: "May affect the first production hours",
+        tone: "warning",
+      });
+    }
+
+    if (unmatchedAttendanceChecks > 0) {
+      issues.push({
+        id: "attendance-checks",
+        title: `${unmatchedAttendanceChecks} attendance checks`,
+        detail: "Device records need staff review",
+        tone: "warning",
+      });
+    }
+
+    if (lowestLine && lowestLine.attendanceRate < 85) {
+      issues.push({
+        id: "lowest-line",
+        title: `${lowestLine.name} is lowest`,
+        detail: `${lowestLine.attendanceRate}% line attendance`,
+        tone: lowestLine.attendanceRate < 70 ? "danger" : "warning",
+      });
+    }
+
+    return issues.slice(0, 3);
+  }, [
+    attendanceOverview.absentWorkers,
+    attendanceOverview.lateWorkers,
+    attendanceOverview.totalWorkers,
+    lineRows,
+    mismatchWorkers,
+    redLines,
+    unmatchedAttendanceChecks,
+  ]);
+
+  const visibleMismatchWorkers = filteredMismatchWorkers.slice(0, mismatchVisibleCount);
+  const visibleEmployeeRows = employeeRows.slice(0, employeeVisibleCount);
+
+  const handleRefresh = useCallback(async () => {
+    await refresh();
+    setLastUpdated(new Date());
+  }, [refresh]);
+
+  const toggleLine = useCallback((lineId: string) => {
+    setExpandedLineIds((current) => {
+      const next = new Set(current);
+      if (next.has(lineId)) {
+        next.delete(lineId);
+      } else {
+        next.add(lineId);
+      }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
 
-  const registeredFingerprintWorkers = workers.filter(
-    (worker) => worker.fingerprintVerificationStatus === "Verified"
-  ).length;
-  const registeredFingerprintAttended =
-    fingerprintDeviceSummary.registeredDevicePins || registeredFingerprintWorkers;
-  const unmatchedFingerprintCount = fingerprintDeviceSummary.unregisteredDevicePins;
-  const fingerprintAttended =
-    fingerprintDeviceSummary.totalDevicePins || registeredFingerprintAttended + unmatchedFingerprintCount;
-  const faceAttended = workers.filter((worker) => worker.faceVerificationStatus === "Verified").length;
-  const faceEventSummary = useMemo(
-    () => buildHikvisionFaceEventSummary(faceEvents, attendanceOverview.attendanceDate),
-    [attendanceOverview.attendanceDate, faceEvents]
-  );
-  const unmatchedFaceCount = faceEventSummary.unmatchedEvents;
-  const overallAttended = attendanceOverview.presentWorkers + attendanceOverview.lateWorkers;
+  useEffect(() => {
+    if (!isLoading && !error) {
+      setLastUpdated(new Date());
+    }
+  }, [error, isLoading, snapshot]);
 
-  const assignedWorkers = lineRows.reduce((sum, line) => sum + line.assignedWorkers, 0);
-  const cameToday = lineRows.reduce((sum, line) => sum + line.presentWorkers + line.lateWorkers, 0);
-  const lineAttendance = assignedWorkers === 0 ? 0 : Math.round((cameToday / assignedWorkers) * 100);
-  const criticalLines = lineRows.filter((line) => line.risk === "Critical").length;
-  const averageLineAttendance =
-    lines.length === 0
-      ? 0
-      : Math.round(lines.reduce((sum, line) => sum + line.attendanceRate, 0) / lines.length);
+  useEffect(() => {
+    setMismatchVisibleCount(MISMATCH_PAGE_SIZE);
+  }, [mismatchFilter, mismatchQuery]);
 
-  const statusData = useMemo(
-    () => [
-      { name: "Present", value: attendanceOverview.presentWorkers, fill: COLORS.present },
-      { name: "Late", value: attendanceOverview.lateWorkers, fill: COLORS.late },
-      { name: "On Leave", value: attendanceOverview.onLeaveWorkers, fill: COLORS.leave },
-      { name: "Absent", value: attendanceOverview.absentWorkers, fill: COLORS.absent },
-    ],
-    [attendanceOverview]
-  );
-
-  const verificationData = useMemo(
-    () => [
-      {
-        label: "Fingerprint",
-        attended: registeredFingerprintAttended,
-        unmatched: unmatchedFingerprintCount,
-        missing: missingFingerprintWorkers,
-      },
-      {
-        label: "Face",
-        attended: faceAttended,
-        unmatched: unmatchedFaceCount,
-        missing: missingFaceWorkers,
-      },
-    ],
-    [
-      faceAttended,
-      missingFaceWorkers,
-      missingFingerprintWorkers,
-      registeredFingerprintAttended,
-      unmatchedFaceCount,
-      unmatchedFingerprintCount,
-    ]
-  );
-
-  const lineChartData = useMemo(
-    () =>
-      lines.map((line) => ({
-        label: line.name,
-        attendance: line.attendanceRate,
-        assigned: line.assignedWorkers,
-        came: line.presentWorkers + line.lateWorkers,
-        absent: line.absentWorkers,
-      })),
-    [lines]
-  );
+  useEffect(() => {
+    setEmployeeVisibleCount(EMPLOYEE_PAGE_SIZE);
+  }, [employeeFilter, employeeQuery]);
 
   return (
-    <main className="ops-exclusive-dashboard">
-      <div className="ops-exclusive-dashboard-shell">
-        <div className="ops-exclusive-dashboard-brand">
-          <div className="ops-logo-badge">
-            <LayoutDashboard size={22} />
+    <main className="ops-exclusive-dashboard ops-ceo-mobile-dashboard">
+      <div className="ops-ceo-shell">
+        <header className="ops-ceo-header">
+          <div className="ops-ceo-brand-row">
+            <div className="ops-ceo-brand-copy">
+              <div className="ops-ceo-factory">
+                <Factory size={18} />
+                Union North Garment
+              </div>
+              <h1>{greeting}</h1>
+            </div>
+            <span className={`ops-ceo-live-chip tone-${error ? "danger" : factoryTone}`}>
+              {error ? "Offline" : factoryTone === "good" ? "Green" : factoryTone === "warning" ? "Amber" : "Red"}
+            </span>
           </div>
-          <div>
-            <div className="ops-row-title">{greeting}</div>
-          </div>
-        </div>
 
-        <div className="ops-page ops-ie-full-dashboard">
-      <PageHeader
-        title="Exclusive Operations Dashboard"
-        subtitle={isLoading ? "Refreshing live factory attendance..." : ""}
-      />
+          <div className="ops-ceo-date-row">
+            <span>
+              <CalendarDays size={17} />
+              {formatDateLabel(attendanceOverview.attendanceDate)}
+            </span>
+            <span>
+              <Clock3 size={17} />
+              Last updated {formatClock(lastUpdated)}
+            </span>
+          </div>
 
-      {error ? (
-        <div className="ops-alert-banner tone-danger">
-          Could not load public dashboard data: {error}
-        </div>
-      ) : null}
+          <button
+            type="button"
+            className="ops-ceo-refresh-button"
+            onClick={handleRefresh}
+            disabled={isLoading}
+          >
+            <RefreshCw size={22} />
+            {isLoading ? "Refreshing" : "Refresh"}
+          </button>
 
-      <section className="ops-ie-hero">
-        <div className="ops-ie-hero-copy">
-          <div className="ops-section-eyebrow">
-            <LayoutDashboard size={15} />
-            Industrial Engineering Control View
-          </div>
-        </div>
-        <div className="ops-ie-hero-stats">
-          <div className="ops-stat-tile">
-            <div className="ops-stat-label">Overall Attendance</div>
-            <div className="ops-stat-value">{overallAttended}/{attendanceOverview.totalWorkers}</div>
-          </div>
-          <div className="ops-stat-tile">
-            <div className="ops-stat-label">Line Attendance</div>
-            <div className="ops-stat-value">{lineAttendance}%</div>
-          </div>
-          <div className="ops-stat-tile">
-            <div className="ops-stat-label">Unmatched Fingerprint PINs</div>
-            <div className="ops-stat-value">{unmatchedFingerprintCount}</div>
-          </div>
-          <div className="ops-stat-tile">
-            <div className="ops-stat-label">Unmatched Face Events</div>
-            <div className="ops-stat-value">{unmatchedFaceCount}</div>
-          </div>
-        </div>
-      </section>
-
-      <section className="ops-exclusive-quick-stats" aria-label="Factory attendance summary">
-        <div className="ops-exclusive-quick-stat">
-          <span>Total Employees</span>
-          <strong>{attendanceOverview.totalWorkers}</strong>
-        </div>
-        <div className="ops-exclusive-quick-stat">
-          <span>Overall Attendance</span>
-          <strong>
-            {overallAttended}/{attendanceOverview.totalWorkers}
-          </strong>
-        </div>
-        <div className="ops-exclusive-quick-stat">
-          <span>Fingerprint Attended</span>
-          <strong>{fingerprintAttended}</strong>
-          <small>{unmatchedFingerprintCount} unmatched PINs</small>
-        </div>
-        <div className="ops-exclusive-quick-stat">
-          <span>Face Attended</span>
-          <strong>{faceAttended}</strong>
-          <small>{unmatchedFaceCount} unmatched face events</small>
-        </div>
-      </section>
-
-      <Card
-        title="Employee Attendance Verification"
-        subtitle="Every active employee with image, department, current line, fingerprint status, face status, and overall attendance."
-      >
-        <div id="ie-verification" className="ops-section-anchor" />
-        <div className="ops-exclusive-sticky-controls">
-          <div className="ops-exclusive-status-row">
-            <StatusBadge label={`${unmatchedFingerprintCount} unmatched fingerprint PINs`} tone="warning" />
-            <StatusBadge label={`${unmatchedFaceCount} unmatched face events`} tone="warning" />
-          </div>
-          <SearchField value={query} onChange={setQuery} placeholder="Search employee, line, or department" />
-          <div className="ops-exclusive-filter-row" role="group" aria-label="Employee verification filters">
-            {verificationFilters.map((filter) => (
+          <nav className="ops-ceo-nav" aria-label="Dashboard sections">
+            {NAV_ITEMS.map((item) => (
               <button
-                key={filter.value}
+                key={item.id}
                 type="button"
-                className={`ops-exclusive-filter-chip${verificationFilter === filter.value ? " is-active" : ""}`}
-                onClick={() => setVerificationFilter(filter.value)}
+                className={activeTab === item.id ? "is-active" : undefined}
+                onClick={() => setActiveTab(item.id)}
               >
-                <span>{filter.label}</span>
-                <strong>{filter.count}</strong>
+                {item.label}
               </button>
             ))}
+          </nav>
+        </header>
+
+        <nav className="ops-ceo-bottom-nav" aria-label="Mobile dashboard sections">
+          {NAV_ITEMS.map(({ id, icon: Icon, label }) => (
+            <button
+              key={id}
+              type="button"
+              className={activeTab === id ? "is-active" : undefined}
+              onClick={() => setActiveTab(id)}
+            >
+              <Icon size={20} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
+
+        {error ? (
+          <div className="ops-ceo-alert-banner">
+            <AlertTriangle size={20} />
+            Could not load dashboard data.
           </div>
-        </div>
+        ) : null}
 
-        <div className="ops-table-wrap ops-exclusive-employee-table" style={{ maxHeight: 620, overflow: "auto" }}>
-          <table className="ops-table">
-            <thead>
-              <tr>
-                <th>Employee</th>
-                <th>Department</th>
-                <th>Line</th>
-                <th>Fingerprint</th>
-                <th>Face</th>
-                <th>Overall Attendance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pagedWorkers.map((worker) => {
-                const line = findLine(lines, worker.currentLineId);
-                const fingerprintVerified = worker.fingerprintVerificationStatus === "Verified";
-                const faceVerified = worker.faceVerificationStatus === "Verified";
+        {activeTab === "today" ? (
+          <section className="ops-ceo-section ops-ceo-tab-panel">
+            <div className="ops-ceo-section-heading">
+              <div>
+                <span>First View</span>
+                <h2>Today Attendance</h2>
+              </div>
+              <strong>{attendanceRate}%</strong>
+            </div>
 
-                return (
-                  <tr key={worker.id}>
-                    <td>
-                      <WorkerChip worker={worker} />
-                    </td>
-                    <td>{worker.department}</td>
-                    <td>{line ? `${line.name} · ${line.code}` : "Unassigned"}</td>
-                    <td>
-                      <StatusBadge
-                        label={verificationLabel(fingerprintVerified)}
-                        tone={verificationTone(fingerprintVerified)}
-                      />
-                    </td>
-                    <td>
-                      <StatusBadge label={verificationLabel(faceVerified)} tone={verificationTone(faceVerified)} />
-                    </td>
-                    <td>
-                      <StatusBadge label={worker.attendanceStatus} tone={attendanceTone(worker.attendanceStatus)} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div className="ops-exclusive-employee-mobile-list">
-          {pagedWorkers.map((worker) => {
-            const line = findLine(lines, worker.currentLineId);
-            const fingerprintVerified = worker.fingerprintVerificationStatus === "Verified";
-            const faceVerified = worker.faceVerificationStatus === "Verified";
-
-            return (
-              <article key={worker.id} className="ops-exclusive-employee-card">
-                <WorkerChip worker={worker} />
-                <div className="ops-exclusive-employee-meta">
-                  <span>{worker.department}</span>
-                  <span>{line ? `${line.name} · ${line.code}` : "Unassigned"}</span>
+            <div className="ops-ceo-kpi-grid">
+              <article className="ops-ceo-kpi-card tone-good is-primary">
+                <div className="ops-ceo-kpi-label">
+                  <CheckCircle2 size={19} />
+                  Present
                 </div>
-                <div className="ops-exclusive-employee-badges">
-                  <StatusBadge
-                    label={`Finger: ${verificationLabel(fingerprintVerified)}`}
-                    tone={verificationTone(fingerprintVerified)}
-                  />
-                  <StatusBadge
-                    label={`Face: ${verificationLabel(faceVerified)}`}
-                    tone={verificationTone(faceVerified)}
-                  />
-                  <StatusBadge label={worker.attendanceStatus} tone={attendanceTone(worker.attendanceStatus)} />
+                <div className="ops-ceo-kpi-value">
+                  {formatNumber(overallAttended)}
+                  <span>/ {formatNumber(attendanceOverview.totalWorkers)}</span>
                 </div>
               </article>
-            );
-          })}
-        </div>
-        <div className="ops-pagination-bar">
-          <div className="ops-row-subtitle">
-            Showing {employeeStart}-{employeeEnd} of {filteredWorkers.length} employees
-          </div>
-          <div className="ops-pagination-actions">
-            <button
-              type="button"
-              className="ops-button ops-button-secondary"
-              disabled={employeePage <= 1}
-              onClick={() => setEmployeePage((current) => Math.max(1, current - 1))}
-            >
-              Previous
-            </button>
-            <span className="ops-pagination-count">
-              Page {employeePage} of {totalEmployeePages}
-            </span>
-            <button
-              type="button"
-              className="ops-button ops-button-secondary"
-              disabled={employeePage >= totalEmployeePages}
-              onClick={() => setEmployeePage((current) => Math.min(totalEmployeePages, current + 1))}
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      </Card>
 
-      <section className="ops-exclusive-section-rail" id="ie-lines">
-        <div>
-          <span>Lines Tracked</span>
-          <strong>{lineRows.length}</strong>
-        </div>
-        <div>
-          <span>Assigned Workers</span>
-          <strong>{assignedWorkers}</strong>
-        </div>
-        <div>
-          <span>Came Today</span>
-          <strong>{cameToday}</strong>
-        </div>
-        <div>
-          <span>Line Attendance</span>
-          <strong>{lineAttendance}%</strong>
-          <small>{criticalLines} critical line(s)</small>
-        </div>
-      </section>
-
-      <Card title="Line Attendance Table" subtitle="Attendance detail by production line.">
-        <div className="ops-table-wrap" style={{ maxHeight: 520, overflow: "auto" }}>
-          <table className="ops-table">
-            <thead>
-              <tr>
-                <th>Line</th>
-                <th>Style</th>
-                <th>Assigned</th>
-                <th>Came</th>
-                <th>Late</th>
-                <th>Leave</th>
-                <th>Absent</th>
-                <th>Attendance</th>
-                <th>Risk</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lineRows.map((line) => (
-                <tr key={line.id}>
-                  <td>
-                    <div className="ops-row-title">{line.name}</div>
-                    <div className="ops-row-subtitle">
-                      {line.code} · {line.department} · {line.shift}
-                    </div>
-                  </td>
-                  <td>{line.allocatedStyle || "Unassigned"}</td>
-                  <td>{line.assignedWorkers}</td>
-                  <td>{line.presentWorkers + line.lateWorkers}</td>
-                  <td>{line.lateWorkers}</td>
-                  <td>{line.onLeaveWorkers}</td>
-                  <td>{line.absentWorkers}</td>
-                  <td>
-                    <StatusBadge
-                      label={`${line.attendanceRate}%`}
-                      tone={line.attendanceRate >= 85 ? "success" : line.attendanceRate >= 70 ? "warning" : "danger"}
-                    />
-                  </td>
-                  <td>
-                    <StatusBadge
-                      label={line.risk}
-                      tone={line.risk === "Stable" ? "success" : line.risk === "Watch" ? "warning" : "danger"}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      <section className="ops-grid cols-3 ops-line-attendance-grid">
-        {lineRows.map((line) => {
-          const lineWorkers = workers.filter((worker) => worker.currentLineId === line.id);
-          return (
-            <div key={line.id} className="ops-card-link ops-static-card">
-              <LineCard
-                line={line}
-              >
-                <div className="ops-list" style={{ marginTop: 16, maxHeight: 260, overflow: "auto" }}>
-                  {lineWorkers.slice(0, 8).map((worker) => (
-                    <div key={worker.id} className="ops-list-item">
-                      <div className="ops-item-header">
-                        <WorkerChip worker={worker} />
-                        <StatusBadge label={worker.attendanceStatus} tone={attendanceTone(worker.attendanceStatus)} />
-                      </div>
-                    </div>
-                  ))}
-                  {lineWorkers.length === 0 ? (
-                    <div className="ops-row-subtitle">No employees currently assigned.</div>
-                  ) : null}
+              <article className="ops-ceo-kpi-card tone-danger">
+                <div className="ops-ceo-kpi-label">
+                  <UserX size={19} />
+                  Absent
                 </div>
-              </LineCard>
+                <div className="ops-ceo-kpi-value">{formatNumber(attendanceOverview.absentWorkers)}</div>
+              </article>
+
+              <article className="ops-ceo-kpi-card tone-warning">
+                <div className="ops-ceo-kpi-label">
+                  <Clock3 size={19} />
+                  Late
+                </div>
+                <div className="ops-ceo-kpi-value">{formatNumber(attendanceOverview.lateWorkers)}</div>
+              </article>
+
+              <article className={`ops-ceo-kpi-card tone-${redLines.length > 0 ? "danger" : amberLines.length > 0 ? "warning" : "good"}`}>
+                <div className="ops-ceo-kpi-label">
+                  <ShieldAlert size={19} />
+                  Line Risk
+                </div>
+                <div className="ops-ceo-kpi-value">{formatNumber(redLines.length + amberLines.length)}</div>
+              </article>
+
+              <article className={`ops-ceo-kpi-card tone-${mismatchWorkers.length > 0 ? "danger" : "good"}`}>
+                <div className="ops-ceo-kpi-label">
+                  <Fingerprint size={19} />
+                  Mismatch
+                </div>
+                <div className="ops-ceo-kpi-value">{formatNumber(mismatchWorkers.length)}</div>
+              </article>
             </div>
-          );
-        })}
-      </section>
 
-      <section className="ops-exclusive-section-rail" id="ie-analytics">
-        <div>
-          <span>Average Line Attendance</span>
-          <strong>{averageLineAttendance}%</strong>
-        </div>
-        <div>
-          <span>Present Workers</span>
-          <strong>{overallAttended}</strong>
-        </div>
-        <div>
-          <span>Late Workers</span>
-          <strong>{attendanceOverview.lateWorkers}</strong>
-        </div>
-        <div>
-          <span>Absent Workers</span>
-          <strong>{attendanceOverview.absentWorkers}</strong>
-        </div>
-      </section>
+            <div className="ops-ceo-mini-list">
+              {urgentIssues.length > 0 ? (
+                urgentIssues.map((issue) => (
+                  <article key={issue.id} className={`ops-ceo-issue-card tone-${issue.tone}`}>
+                    <AlertTriangle size={22} />
+                    <div>
+                      <h3>{issue.title}</h3>
+                      <p>{issue.detail}</p>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <article className="ops-ceo-empty-card">
+                  <CheckCircle2 size={22} />
+                  No urgent issues right now
+                </article>
+              )}
+            </div>
+          </section>
+        ) : null}
 
-      <section className="ops-grid cols-2">
-        <Card title="Attendance Status Mix" subtitle="Present, late, leave, and absent distribution.">
-          <div className="ops-chart-box">
-            <ResponsiveContainer>
-              <PieChart>
-                <Pie data={statusData} dataKey="value" nameKey="name" innerRadius={70} outerRadius={110}>
-                  {statusData.map((entry) => (
-                    <Cell key={entry.name} fill={entry.fill} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
+        {activeTab === "mismatch" ? (
+          <section className="ops-ceo-section ops-ceo-tab-panel">
+            <div className="ops-ceo-section-heading">
+              <div>
+                <span>Fingerprint vs Face</span>
+                <h2>Attendance Mismatch</h2>
+              </div>
+              <strong>{formatNumber(filteredMismatchWorkers.length)}</strong>
+            </div>
 
-        <Card
-          title="Verification Coverage"
-          subtitle="Fingerprint and face coverage separates registered workers from unmatched device events."
-        >
-          <div className="ops-chart-box">
-            <ResponsiveContainer>
-              <BarChart data={verificationData}>
-                <CartesianGrid stroke="#eef2f7" vertical={false} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} />
-                <YAxis tickLine={false} axisLine={false} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="attended" name="Registered attended" fill={COLORS.fingerprint} radius={[6, 6, 0, 0]} />
-                <Bar dataKey="unmatched" name="Unmatched events" fill={COLORS.late} radius={[6, 6, 0, 0]} />
-                <Bar dataKey="missing" name="Not attended" fill={COLORS.absent} radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-      </section>
-
-      <section className="ops-grid cols-2">
-        <Card title="Line Attendance Percentage" subtitle="Attendance percentage by active production line.">
-          <div className="ops-chart-box">
-            <ResponsiveContainer>
-              <BarChart data={lineChartData}>
-                <CartesianGrid stroke="#eef2f7" vertical={false} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} />
-                <YAxis tickLine={false} axisLine={false} domain={[0, 100]} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="attendance" name="Attendance %" fill={COLORS.face} radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-
-        <Card title="Department Attendance" subtitle="Came today against total department roster.">
-          <div className="ops-chart-box">
-            <ResponsiveContainer>
-              <BarChart data={reportSeries.departmentAttendance}>
-                <CartesianGrid stroke="#eef2f7" vertical={false} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} />
-                <YAxis tickLine={false} axisLine={false} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="value" name="Came Today" fill={COLORS.present} radius={[6, 6, 0, 0]} />
-                <Bar dataKey="secondaryValue" name="Total Staff" fill={COLORS.total} radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-      </section>
-
-      <Card title="Department Detail" subtitle="Department-wise attendance rates for IE planning.">
-        <div className="ops-table-wrap" style={{ maxHeight: 460, overflow: "auto" }}>
-          <table className="ops-table">
-            <thead>
-              <tr>
-                <th>Department</th>
-                <th>Total</th>
-                <th>Came</th>
-                <th>Late</th>
-                <th>Leave</th>
-                <th>Absent</th>
-                <th>Attendance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {departmentAttendance.map((department) => (
-                <tr key={department.department}>
-                  <td>
-                    <div className="ops-row-title">{department.department}</div>
-                  </td>
-                  <td>{department.totalWorkers}</td>
-                  <td>{department.presentWorkers + department.lateWorkers}</td>
-                  <td>{department.lateWorkers}</td>
-                  <td>{department.onLeaveWorkers}</td>
-                  <td>{department.absentWorkers}</td>
-                  <td>{department.attendanceRate}%</td>
-                </tr>
+            <div className="ops-ceo-segmented" aria-label="Mismatch filter">
+              {MISMATCH_FILTERS.map((filter) => (
+                <button
+                  key={filter.id}
+                  type="button"
+                  className={mismatchFilter === filter.id ? "is-active" : undefined}
+                  onClick={() => setMismatchFilter(filter.id)}
+                >
+                  {filter.label}
+                </button>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-        </div>
+            </div>
+
+            <label className="ops-ceo-search">
+              <Search size={18} />
+              <input
+                value={mismatchQuery}
+                onChange={(event) => setMismatchQuery(event.target.value)}
+                placeholder="Search name or ID"
+              />
+            </label>
+
+            <div className="ops-ceo-mismatch-list">
+              {visibleMismatchWorkers.length > 0 ? (
+                visibleMismatchWorkers.map((worker) => {
+                  const line = findLine(lines, worker.currentLineId);
+                  const fingerprintVerified = isVerified(worker.fingerprintVerificationStatus);
+                  const faceVerified = isVerified(worker.faceVerificationStatus);
+
+                  return (
+                    <article key={worker.id} className="ops-ceo-mismatch-card tone-danger">
+                      <div className="ops-ceo-mismatch-top">
+                        <div>
+                          <h3>{worker.fullName}</h3>
+                          <p>{worker.employeeId} - {line?.name || "No line"} - {worker.attendanceStatus}</p>
+                        </div>
+                        <span>{mismatchLabel(worker)}</span>
+                      </div>
+                      <div className="ops-ceo-system-row">
+                        <span className={fingerprintVerified ? "is-yes" : "is-no"}>
+                          <Fingerprint size={16} />
+                          Fingerprint {yesNo(fingerprintVerified)}
+                        </span>
+                        <span className={faceVerified ? "is-yes" : "is-no"}>
+                          <ScanFace size={16} />
+                          Face {yesNo(faceVerified)}
+                        </span>
+                      </div>
+                    </article>
+                  );
+                })
+              ) : (
+                <article className="ops-ceo-empty-card">
+                  <CheckCircle2 size={22} />
+                  No fingerprint and face mismatches
+                </article>
+              )}
+            </div>
+
+            {filteredMismatchWorkers.length > visibleMismatchWorkers.length ? (
+              <button
+                type="button"
+                className="ops-ceo-show-more"
+                onClick={() => setMismatchVisibleCount((current) => current + MISMATCH_PAGE_SIZE)}
+              >
+                Show more
+              </button>
+            ) : null}
+          </section>
+        ) : null}
+
+        {activeTab === "employees" ? (
+          <section className="ops-ceo-section ops-ceo-tab-panel">
+            <div className="ops-ceo-section-heading">
+              <div>
+                <span>Employees</span>
+                <h2>Attendance List</h2>
+              </div>
+              <strong>{formatNumber(employeeRows.length)}</strong>
+            </div>
+
+            <div className="ops-ceo-segmented" aria-label="Employee filter">
+              {EMPLOYEE_FILTERS.map((filter) => (
+                <button
+                  key={filter.id}
+                  type="button"
+                  className={employeeFilter === filter.id ? "is-active" : undefined}
+                  onClick={() => setEmployeeFilter(filter.id)}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+
+            <label className="ops-ceo-search">
+              <Search size={18} />
+              <input
+                value={employeeQuery}
+                onChange={(event) => setEmployeeQuery(event.target.value)}
+                placeholder="Search employee"
+              />
+            </label>
+
+            <div className="ops-ceo-worker-list">
+              {visibleEmployeeRows.length > 0 ? (
+                visibleEmployeeRows.map((worker) => {
+                  const line = findLine(lines, worker.currentLineId);
+                  const hasMismatch = mismatchKind(worker) !== "none";
+                  const tone = hasMismatch
+                    ? "danger"
+                    : worker.attendanceStatus === "Absent"
+                      ? "danger"
+                      : worker.attendanceStatus === "Late"
+                        ? "warning"
+                        : "good";
+
+                  return (
+                    <article key={worker.id} className={`ops-ceo-worker-card tone-${tone}`}>
+                      <div>
+                        <h3>{worker.fullName}</h3>
+                        <p>{worker.employeeId} - {line?.name || "No line"}</p>
+                      </div>
+                      <span>{hasMismatch ? mismatchLabel(worker) : worker.attendanceStatus}</span>
+                    </article>
+                  );
+                })
+              ) : (
+                <article className="ops-ceo-empty-card">
+                  <Users size={22} />
+                  No employees found
+                </article>
+              )}
+            </div>
+
+            {employeeRows.length > visibleEmployeeRows.length ? (
+              <button
+                type="button"
+                className="ops-ceo-show-more"
+                onClick={() => setEmployeeVisibleCount((current) => current + EMPLOYEE_PAGE_SIZE)}
+              >
+                Show more
+              </button>
+            ) : null}
+          </section>
+        ) : null}
+
+        {activeTab === "lines" ? (
+          <section className="ops-ceo-section ops-ceo-tab-panel">
+            <div className="ops-ceo-section-heading">
+              <div>
+                <span>Line Status</span>
+                <h2>{formatNumber(lineRows.length)} active lines</h2>
+              </div>
+              <strong>{lineAttendance}%</strong>
+            </div>
+
+            <div className="ops-ceo-line-list">
+              {lineRiskRows.map((line) => {
+                const tone = lineTone(line);
+                const came = line.presentWorkers + line.lateWorkers;
+                const isExpanded = expandedLineIds.has(line.id);
+
+                return (
+                  <article key={line.id} className={`ops-ceo-line-card tone-${tone}`}>
+                    <button
+                      type="button"
+                      className="ops-ceo-line-toggle"
+                      aria-expanded={isExpanded}
+                      aria-label={`${line.name} details`}
+                      onClick={() => toggleLine(line.id)}
+                    >
+                      <div className="ops-ceo-line-top">
+                        <div>
+                          <h3>{line.name}</h3>
+                          <p>{line.allocatedStyle || line.department || line.code}</p>
+                        </div>
+                        <span>{lineRiskLabel(line)}</span>
+                      </div>
+                      <div className="ops-ceo-line-summary">
+                        <strong>{line.attendanceRate}%</strong>
+                        <ChevronDown className={isExpanded ? "is-open" : undefined} size={20} />
+                      </div>
+                    </button>
+
+                    {isExpanded ? (
+                      <div className="ops-ceo-line-metrics">
+                        <span>Assigned <strong>{line.assignedWorkers}</strong></span>
+                        <span>Came <strong>{came}</strong></span>
+                        <span>Absent <strong>{line.absentWorkers}</strong></span>
+                        <span>Late <strong>{line.lateWorkers}</strong></span>
+                        <span>Leave <strong>{line.onLeaveWorkers}</strong></span>
+                        <span>Output <strong>{line.output}</strong></span>
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
       </div>
     </main>
   );
