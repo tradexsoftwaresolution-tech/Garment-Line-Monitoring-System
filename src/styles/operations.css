@@ -3586,7 +3586,7 @@ textarea:focus {
 
 .ops-ceo-live-chip,
 .ops-ceo-line-top span,
-.ops-ceo-worker-card span {
+.ops-ceo-worker-card > span {
   flex: 0 0 auto;
   min-width: 70px;
   padding: 8px 10px;
@@ -4735,5 +4735,551 @@ textarea:focus {
 
   .ops-chart-box {
     height: 250px;
+  }
+}
+
+/* Modern IO polish: frosted chrome, live motion, drawers, and quieter data surfaces. */
+.ops-live-dot {
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 0 currentColor;
+}
+
+.ops-live-dot.tone-success,
+.ops-hikvision-live-pill.tone-success .ops-live-dot {
+  color: #16a34a;
+}
+
+.ops-live-dot.tone-warning {
+  color: #d97706;
+}
+
+.ops-live-dot.tone-danger,
+.ops-hikvision-live-pill.tone-danger .ops-live-dot {
+  color: #dc2626;
+}
+
+.ops-live-dot.tone-neutral,
+.ops-hikvision-live-pill.tone-neutral .ops-live-dot {
+  color: #64748b;
+}
+
+.is-spinning {
+  animation: opsSpin 0.88s linear infinite;
+}
+
+.ops-ceo-mobile-dashboard {
+  background:
+    linear-gradient(180deg, rgba(247, 248, 251, 0.98) 0%, rgba(239, 245, 248, 0.98) 48%, rgba(248, 250, 252, 0.98) 100%);
+}
+
+.ops-ceo-shell {
+  gap: 16px;
+}
+
+.ops-ceo-header {
+  position: sticky;
+  top: max(8px, env(safe-area-inset-top));
+  z-index: 70;
+  border-color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.86);
+  -webkit-backdrop-filter: blur(26px) saturate(170%);
+  backdrop-filter: blur(26px) saturate(170%);
+}
+
+.ops-ceo-live-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.ops-ceo-refresh-button,
+.ops-ceo-show-more,
+.ops-ceo-nav button,
+.ops-ceo-bottom-nav button,
+.ops-ceo-segmented button,
+.ops-ceo-line-card,
+.ops-ceo-mismatch-card,
+.ops-ceo-worker-card,
+.ops-ceo-issue-card,
+.ops-ceo-empty-card {
+  transition:
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    background 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.ops-ceo-refresh-button:hover,
+.ops-ceo-show-more:hover,
+.ops-ceo-line-card:hover,
+.ops-ceo-mismatch-card:hover,
+.ops-ceo-worker-card:hover,
+.ops-ceo-issue-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.13);
+}
+
+.ops-ceo-refresh-button:active,
+.ops-ceo-show-more:active,
+.ops-ceo-nav button:active,
+.ops-ceo-bottom-nav button:active,
+.ops-ceo-segmented button:active,
+.ops-ceo-line-card:active,
+.ops-ceo-mismatch-card:active,
+.ops-ceo-worker-card:active {
+  transform: translateY(0) scale(0.985);
+}
+
+.ops-ceo-nav {
+  padding: 4px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 999px;
+  background: rgba(241, 245, 249, 0.82);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.ops-ceo-nav button {
+  gap: 7px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #475569;
+}
+
+.ops-ceo-nav button.is-active {
+  background: rgba(255, 255, 255, 0.94);
+  color: #0f172a;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.1);
+}
+
+.ops-ceo-bottom-nav {
+  right: auto;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  left: 50%;
+  width: min(520px, calc(100% - 20px));
+  padding: 8px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: 0 20px 52px rgba(15, 23, 42, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+}
+
+.ops-ceo-bottom-nav button {
+  border-radius: 16px;
+}
+
+.ops-ceo-bottom-nav button.is-active {
+  background: #0f172a;
+  color: #fff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.2);
+}
+
+.ops-ceo-bottom-nav button.is-active svg {
+  color: #fff;
+}
+
+.ops-ceo-tab-panel {
+  animation: opsPanelReveal 220ms ease both;
+}
+
+button.ops-ceo-mismatch-card,
+button.ops-ceo-worker-card {
+  width: 100%;
+  border-style: solid;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ops-ceo-worker-card {
+  min-width: 0;
+}
+
+.ops-ceo-worker-card .ops-row-title {
+  color: #0f172a;
+  font-size: 1.02rem;
+  line-height: 1.18;
+}
+
+.ops-ceo-worker-card .ops-row-subtitle,
+.ops-ceo-worker-line {
+  display: block;
+  margin-top: 3px;
+  color: #475569;
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.ops-ceo-line-toggle {
+  cursor: pointer;
+}
+
+.ops-ceo-line-toggle .ops-ceo-line-metrics {
+  margin-top: 2px;
+}
+
+.ops-ceo-line-summary svg {
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.06);
+  color: #0f172a;
+}
+
+.ops-ceo-detail-stack,
+.ops-hikvision-detail-stack,
+.ops-hikvision-feed {
+  display: grid;
+  gap: 14px;
+}
+
+.ops-ceo-drawer-hero,
+.ops-hikvision-camera-hero,
+.ops-ceo-drawer-worker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.78);
+}
+
+.ops-ceo-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ops-ceo-detail-field {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.ops-ceo-detail-field span {
+  display: block;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ops-ceo-detail-field strong {
+  display: block;
+  margin-top: 6px;
+  color: #0f172a;
+  font-size: 0.98rem;
+  line-height: 1.24;
+  overflow-wrap: anywhere;
+}
+
+.ops-ceo-detail-section h3 {
+  margin: 0 0 10px;
+  color: #0f172a;
+  font-size: 0.95rem;
+}
+
+.ops-ceo-drawer-list {
+  display: grid;
+  gap: 9px;
+}
+
+.ops-ceo-drawer-worker {
+  width: 100%;
+  border-style: solid;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ops-hikvision-modern {
+  gap: 18px;
+}
+
+.ops-hikvision-modern .ops-page-header {
+  position: sticky;
+  top: 12px;
+  z-index: 60;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.11), inset 0 1px 0 rgba(255, 255, 255, 0.86);
+  -webkit-backdrop-filter: blur(26px) saturate(170%);
+  backdrop-filter: blur(26px) saturate(170%);
+}
+
+.ops-hikvision-actions {
+  justify-content: flex-end;
+}
+
+.ops-hikvision-live-pill {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.74);
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 850;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76);
+}
+
+.ops-hikvision-live-pill.tone-success {
+  color: #14532d;
+  background: rgba(220, 252, 231, 0.76);
+}
+
+.ops-hikvision-live-pill.tone-danger {
+  color: #7f1d1d;
+  background: rgba(254, 226, 226, 0.82);
+}
+
+.ops-hikvision-signal-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.ops-hikvision-signal-row div {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  color: #334155;
+  font-size: 0.8rem;
+  font-weight: 820;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.74);
+}
+
+.ops-modern-segmented {
+  display: flex;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px;
+  overflow-x: auto;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 999px;
+  background: rgba(241, 245, 249, 0.84);
+  -webkit-overflow-scrolling: touch;
+}
+
+.ops-modern-segmented button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #475569;
+  font-size: 0.82rem;
+  font-weight: 850;
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), background 180ms ease, color 180ms ease, box-shadow 180ms ease;
+}
+
+.ops-modern-segmented button strong {
+  color: inherit;
+  font-size: 0.78rem;
+}
+
+.ops-modern-segmented button.is-active {
+  background: rgba(255, 255, 255, 0.96);
+  color: #0f172a;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.1);
+}
+
+.ops-icon-button {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  color: #0f172a;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76);
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 180ms ease, background 180ms ease;
+}
+
+.ops-icon-button:hover {
+  transform: translateY(-1px);
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1);
+}
+
+.ops-hikvision-modern .ops-table tbody tr,
+.ops-chart-box {
+  transition: background 180ms ease, box-shadow 180ms ease, transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.ops-hikvision-modern .ops-table tbody tr:hover {
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.ops-chart-box {
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.54);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.ops-chart-box .recharts-cartesian-grid line {
+  stroke: rgba(148, 163, 184, 0.22);
+}
+
+.ops-chart-box .recharts-text {
+  fill: #64748b;
+  font-size: 0.76rem;
+}
+
+.ops-chart-box .recharts-tooltip-wrapper {
+  filter: drop-shadow(0 12px 28px rgba(15, 23, 42, 0.14));
+}
+
+.ops-drawer-backdrop {
+  z-index: 1200;
+  background: rgba(15, 23, 42, 0.22);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  animation: opsFadeIn 160ms ease both;
+}
+
+.ops-drawer {
+  border-left: 1px solid rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: -24px 0 72px rgba(15, 23, 42, 0.2);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  animation: opsDrawerIn 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.ops-drawer-header,
+.ops-drawer-footer {
+  background: rgba(255, 255, 255, 0.54);
+}
+
+@keyframes opsFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes opsPanelReveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes opsDrawerIn {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes opsSheetIn {
+  from {
+    opacity: 0;
+    transform: translateY(26px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes opsSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 760px) {
+  .ops-hikvision-modern .ops-page-header {
+    top: 8px;
+  }
+
+  .ops-modern-segmented {
+    width: 100%;
+  }
+
+  .ops-modern-segmented button {
+    flex: 1 0 auto;
+    justify-content: center;
+  }
+
+  .ops-ceo-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ops-drawer-backdrop {
+    align-items: flex-end;
+    justify-content: center;
+  }
+
+  .ops-drawer {
+    width: 100%;
+    height: auto;
+    max-height: 88svh;
+    border-left: 0;
+    border-radius: 22px 22px 0 0;
+    animation-name: opsSheetIn;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-spinning,
+  .ops-ceo-tab-panel,
+  .ops-drawer,
+  .ops-drawer-backdrop,
+  .ops-live-dot {
+    animation: none !important;
+  }
+
+  .ops-ceo-refresh-button,
+  .ops-ceo-show-more,
+  .ops-ceo-nav button,
+  .ops-ceo-bottom-nav button,
+  .ops-ceo-segmented button,
+  .ops-ceo-line-card,
+  .ops-ceo-mismatch-card,
+  .ops-ceo-worker-card,
+  .ops-ceo-issue-card,
+  .ops-modern-segmented button,
+  .ops-icon-button {
+    transition: none !important;
   }
 }

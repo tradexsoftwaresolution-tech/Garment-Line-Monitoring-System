@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
   CalendarDays,
   CheckCircle2,
-  ChevronDown,
+  ChevronRight,
   Clock3,
   Factory,
   Fingerprint,
@@ -15,6 +15,7 @@ import {
   UserX,
   Users,
 } from "lucide-react";
+import { DetailDrawer, StatusBadge, WorkerChip, attendanceTone } from "../components/ops-ui";
 import { buildHikvisionFaceEventSummary } from "../face-event-counts";
 import { usePublicExclusiveDashboardSnapshot } from "../hooks/use-public-exclusive-dashboard-snapshot";
 import type { ProductionLineRecord, WorkerProfile } from "../types";
@@ -187,7 +188,8 @@ export function IeFullDashboardPage() {
   const [employeeFilter, setEmployeeFilter] = useState<EmployeeFilter>("attention");
   const [employeeQuery, setEmployeeQuery] = useState("");
   const [employeeVisibleCount, setEmployeeVisibleCount] = useState(EMPLOYEE_PAGE_SIZE);
-  const [expandedLineIds, setExpandedLineIds] = useState<Set<string>>(() => new Set());
+  const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null);
+  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
 
   const greeting = useMemo(() => getAntonioGreeting(currentTime), [currentTime]);
 
@@ -358,23 +360,23 @@ export function IeFullDashboardPage() {
 
   const visibleMismatchWorkers = filteredMismatchWorkers.slice(0, mismatchVisibleCount);
   const visibleEmployeeRows = employeeRows.slice(0, employeeVisibleCount);
+  const selectedWorker = selectedWorkerId ? workers.find((worker) => worker.id === selectedWorkerId) : undefined;
+  const selectedWorkerLine = selectedWorker ? findLine(lines, selectedWorker.currentLineId) : undefined;
+  const selectedLine = selectedLineId ? lines.find((line) => line.id === selectedLineId) : undefined;
+  const selectedLineWorkers = useMemo(
+    () =>
+      selectedLineId
+        ? workers
+            .filter((worker) => worker.currentLineId === selectedLineId)
+            .sort((a, b) => employeePriority(a) - employeePriority(b) || a.fullName.localeCompare(b.fullName))
+        : [],
+    [selectedLineId, workers]
+  );
 
   const handleRefresh = useCallback(async () => {
     await refresh();
     setLastUpdated(new Date());
   }, [refresh]);
-
-  const toggleLine = useCallback((lineId: string) => {
-    setExpandedLineIds((current) => {
-      const next = new Set(current);
-      if (next.has(lineId)) {
-        next.delete(lineId);
-      } else {
-        next.add(lineId);
-      }
-      return next;
-    });
-  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date()), 60_000);
@@ -395,6 +397,18 @@ export function IeFullDashboardPage() {
     setEmployeeVisibleCount(EMPLOYEE_PAGE_SIZE);
   }, [employeeFilter, employeeQuery]);
 
+  useEffect(() => {
+    if (selectedWorkerId && !workers.some((worker) => worker.id === selectedWorkerId)) {
+      setSelectedWorkerId(null);
+    }
+  }, [selectedWorkerId, workers]);
+
+  useEffect(() => {
+    if (selectedLineId && !lines.some((line) => line.id === selectedLineId)) {
+      setSelectedLineId(null);
+    }
+  }, [lines, selectedLineId]);
+
   return (
     <main className="ops-exclusive-dashboard ops-ceo-mobile-dashboard">
       <div className="ops-ceo-shell">
@@ -408,6 +422,7 @@ export function IeFullDashboardPage() {
               <h1>{greeting}</h1>
             </div>
             <span className={`ops-ceo-live-chip tone-${error ? "danger" : factoryTone}`}>
+              <span className="ops-live-dot" />
               {error ? "Offline" : factoryTone === "good" ? "Green" : factoryTone === "warning" ? "Amber" : "Red"}
             </span>
           </div>
@@ -429,19 +444,20 @@ export function IeFullDashboardPage() {
             onClick={handleRefresh}
             disabled={isLoading}
           >
-            <RefreshCw size={22} />
+            <RefreshCw className={isLoading ? "is-spinning" : undefined} size={22} />
             {isLoading ? "Refreshing" : "Refresh"}
           </button>
 
           <nav className="ops-ceo-nav" aria-label="Dashboard sections">
-            {NAV_ITEMS.map((item) => (
+            {NAV_ITEMS.map(({ id, icon: Icon, label }) => (
               <button
-                key={item.id}
+                key={id}
                 type="button"
-                className={activeTab === item.id ? "is-active" : undefined}
-                onClick={() => setActiveTab(item.id)}
+                className={activeTab === id ? "is-active" : undefined}
+                onClick={() => setActiveTab(id)}
               >
-                {item.label}
+                <Icon size={16} />
+                <span>{label}</span>
               </button>
             ))}
           </nav>
@@ -584,7 +600,12 @@ export function IeFullDashboardPage() {
                   const faceVerified = isVerified(worker.faceVerificationStatus);
 
                   return (
-                    <article key={worker.id} className="ops-ceo-mismatch-card tone-danger">
+                    <button
+                      key={worker.id}
+                      type="button"
+                      className="ops-ceo-mismatch-card tone-danger"
+                      onClick={() => setSelectedWorkerId(worker.id)}
+                    >
                       <div className="ops-ceo-mismatch-top">
                         <div>
                           <h3>{worker.fullName}</h3>
@@ -602,7 +623,7 @@ export function IeFullDashboardPage() {
                           Face {yesNo(faceVerified)}
                         </span>
                       </div>
-                    </article>
+                    </button>
                   );
                 })
               ) : (
@@ -671,13 +692,18 @@ export function IeFullDashboardPage() {
                         : "good";
 
                   return (
-                    <article key={worker.id} className={`ops-ceo-worker-card tone-${tone}`}>
-                      <div>
-                        <h3>{worker.fullName}</h3>
-                        <p>{worker.employeeId} - {line?.name || "No line"}</p>
-                      </div>
+                    <button
+                      key={worker.id}
+                      type="button"
+                      className={`ops-ceo-worker-card tone-${tone}`}
+                      onClick={() => setSelectedWorkerId(worker.id)}
+                    >
+                      <WorkerChip
+                        worker={worker}
+                        meta={<span className="ops-ceo-worker-line">{line?.name || "No line"}</span>}
+                      />
                       <span>{hasMismatch ? mismatchLabel(worker) : worker.attendanceStatus}</span>
-                    </article>
+                    </button>
                   );
                 })
               ) : (
@@ -714,16 +740,14 @@ export function IeFullDashboardPage() {
               {lineRiskRows.map((line) => {
                 const tone = lineTone(line);
                 const came = line.presentWorkers + line.lateWorkers;
-                const isExpanded = expandedLineIds.has(line.id);
 
                 return (
                   <article key={line.id} className={`ops-ceo-line-card tone-${tone}`}>
                     <button
                       type="button"
                       className="ops-ceo-line-toggle"
-                      aria-expanded={isExpanded}
                       aria-label={`${line.name} details`}
-                      onClick={() => toggleLine(line.id)}
+                      onClick={() => setSelectedLineId(line.id)}
                     >
                       <div className="ops-ceo-line-top">
                         <div>
@@ -734,11 +758,9 @@ export function IeFullDashboardPage() {
                       </div>
                       <div className="ops-ceo-line-summary">
                         <strong>{line.attendanceRate}%</strong>
-                        <ChevronDown className={isExpanded ? "is-open" : undefined} size={20} />
+                        <ChevronRight size={20} />
                       </div>
-                    </button>
 
-                    {isExpanded ? (
                       <div className="ops-ceo-line-metrics">
                         <span>Assigned <strong>{line.assignedWorkers}</strong></span>
                         <span>Came <strong>{came}</strong></span>
@@ -747,15 +769,131 @@ export function IeFullDashboardPage() {
                         <span>Leave <strong>{line.onLeaveWorkers}</strong></span>
                         <span>Output <strong>{line.output}</strong></span>
                       </div>
-                    ) : null}
+                    </button>
                   </article>
                 );
               })}
             </div>
           </section>
         ) : null}
+
+        <DetailDrawer
+          open={Boolean(selectedWorker)}
+          title={selectedWorker?.fullName || "Employee"}
+          subtitle={selectedWorker ? `${selectedWorker.employeeId} - ${selectedWorker.roleTitle}` : undefined}
+          onClose={() => setSelectedWorkerId(null)}
+        >
+          {selectedWorker ? (
+            <div className="ops-ceo-detail-stack">
+              <div className="ops-ceo-drawer-hero">
+                <WorkerChip worker={selectedWorker} />
+                <StatusBadge
+                  label={selectedWorker.attendanceStatus}
+                  tone={attendanceTone(selectedWorker.attendanceStatus)}
+                />
+              </div>
+
+              <div className="ops-ceo-detail-grid">
+                <DetailField label="Department" value={selectedWorker.department} />
+                <DetailField label="Line" value={selectedWorkerLine?.name || "No line"} />
+                <DetailField label="Shift" value={selectedWorker.shift} />
+                <DetailField label="Current Status" value={selectedWorker.currentStatus} />
+              </div>
+
+              <div className="ops-ceo-system-row">
+                <span className={isVerified(selectedWorker.fingerprintVerificationStatus) ? "is-yes" : "is-no"}>
+                  <Fingerprint size={16} />
+                  Fingerprint {yesNo(isVerified(selectedWorker.fingerprintVerificationStatus))}
+                </span>
+                <span className={isVerified(selectedWorker.faceVerificationStatus) ? "is-yes" : "is-no"}>
+                  <ScanFace size={16} />
+                  Face {yesNo(isVerified(selectedWorker.faceVerificationStatus))}
+                </span>
+              </div>
+
+              <div className="ops-ceo-detail-grid">
+                <DetailField label="Validation" value={selectedWorker.finalValidationStatus} />
+                <DetailField label="Phone" value={selectedWorker.phone || "Not captured"} />
+                <DetailField label="Joined" value={formatDateLabel(selectedWorker.joinDate)} />
+                <DetailField label="Skills" value={selectedWorker.skills.length ? selectedWorker.skills.join(", ") : "Not captured"} />
+              </div>
+            </div>
+          ) : null}
+        </DetailDrawer>
+
+        <DetailDrawer
+          open={Boolean(selectedLine)}
+          title={selectedLine?.name || "Line"}
+          subtitle={selectedLine ? `${selectedLine.code} - ${selectedLine.shift}` : undefined}
+          onClose={() => setSelectedLineId(null)}
+        >
+          {selectedLine ? (
+            <div className="ops-ceo-detail-stack">
+              <div className={`ops-ceo-line-card tone-${lineTone(selectedLine)}`}>
+                <div className="ops-ceo-line-top">
+                  <div>
+                    <h3>{selectedLine.allocatedStyle || "Unassigned style"}</h3>
+                    <p>{selectedLine.department} - {selectedLine.supervisor}</p>
+                  </div>
+                  <span>{lineRiskLabel(selectedLine)}</span>
+                </div>
+                <div className="ops-ceo-line-summary">
+                  <strong>{selectedLine.attendanceRate}%</strong>
+                  <StatusBadge
+                    label={selectedLine.risk}
+                    tone={lineTone(selectedLine) === "good" ? "success" : lineTone(selectedLine) === "warning" ? "warning" : "danger"}
+                  />
+                </div>
+              </div>
+
+              <div className="ops-ceo-detail-grid">
+                <DetailField label="Assigned" value={selectedLine.assignedWorkers} />
+                <DetailField label="Present" value={selectedLine.presentWorkers} />
+                <DetailField label="Late" value={selectedLine.lateWorkers} />
+                <DetailField label="Absent" value={selectedLine.absentWorkers} />
+                <DetailField label="Leave" value={selectedLine.onLeaveWorkers} />
+                <DetailField label="Output" value={`${selectedLine.output}/${selectedLine.targetOutput}`} />
+              </div>
+
+              <div className="ops-ceo-detail-section">
+                <h3>Line Employees</h3>
+                <div className="ops-ceo-drawer-list">
+                  {selectedLineWorkers.slice(0, 8).map((worker) => (
+                    <button
+                      key={worker.id}
+                      type="button"
+                      className="ops-ceo-drawer-worker"
+                      onClick={() => {
+                        setSelectedLineId(null);
+                        setSelectedWorkerId(worker.id);
+                      }}
+                    >
+                      <WorkerChip worker={worker} />
+                      <StatusBadge label={worker.attendanceStatus} tone={attendanceTone(worker.attendanceStatus)} />
+                    </button>
+                  ))}
+                  {selectedLineWorkers.length === 0 ? (
+                    <div className="ops-ceo-empty-card">
+                      <Users size={22} />
+                      No employees assigned
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </DetailDrawer>
       </div>
     </main>
+  );
+}
+
+function DetailField({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="ops-ceo-detail-field">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }
 
