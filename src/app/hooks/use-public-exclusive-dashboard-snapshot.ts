@@ -63,7 +63,10 @@ export const EMPTY_PUBLIC_OPERATIONS_SNAPSHOT: OperationsSnapshot = {
   },
 };
 
-export function usePublicExclusiveDashboardSnapshot(refreshMs = 10_000) {
+export function usePublicExclusiveDashboardSnapshot(
+  attendanceDate?: string,
+  refreshMs = 10_000
+) {
   const [snapshot, setSnapshot] = useState<OperationsSnapshot>(EMPTY_PUBLIC_OPERATIONS_SNAPSHOT);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -76,7 +79,7 @@ export function usePublicExclusiveDashboardSnapshot(refreshMs = 10_000) {
     }
 
     try {
-      const nextSnapshot = await getPublicExclusiveDashboardSnapshotFromBackend();
+      const nextSnapshot = await getPublicExclusiveDashboardSnapshotFromBackend(attendanceDate);
       setSnapshot(nextSnapshot);
       setError(null);
     } catch (requestError) {
@@ -84,10 +87,15 @@ export function usePublicExclusiveDashboardSnapshot(refreshMs = 10_000) {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [attendanceDate]);
 
   useEffect(() => {
+    setIsLoading(true);
     void refresh();
+    if (refreshMs <= 0) {
+      return undefined;
+    }
+
     const timer = window.setInterval(() => {
       void refresh();
     }, refreshMs);

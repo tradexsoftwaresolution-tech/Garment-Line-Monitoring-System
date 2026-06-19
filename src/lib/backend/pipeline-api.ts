@@ -149,6 +149,10 @@ export function getZktecoEventsFromBackend(limit = 80) {
   );
 }
 
-export function getPublicExclusiveDashboardSnapshotFromBackend() {
-  return backendPublicJsonRequest<OperationsSnapshot>("/api/public/exclusive-dashboard");
+export function getPublicExclusiveDashboardSnapshotFromBackend(attendanceDate?: string | null) {
+  return backendPublicJsonRequest<OperationsSnapshot>(
+    "/api/public/exclusive-dashboard",
+    {},
+    { attendanceDate: attendanceDate || null }
+  );
 }
