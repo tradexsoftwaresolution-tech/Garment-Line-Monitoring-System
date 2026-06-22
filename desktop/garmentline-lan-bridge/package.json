@@ -1,6 +1,6 @@
 {
   "name": "garmentline-lan-bridge",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Integration Hub desktop bridge for GarmentLine ZKTeco and Hikvision devices.",
   "main": "electron/main.js",
   "private": true,
@@ -18,8 +18,8 @@
     "electron-builder": "^26.0.12"
   },
   "build": {
-    "appId": "com.tradexinnovations.integrationhub.lanbridge",
-    "productName": "Integration Hub LAN Bridge",
+    "appId": "com.tradexinnovations.integrationhub.lanbridge.v2",
+    "productName": "Integration Hub LAN Bridge_v2",
     "copyright": "Copyright (c) 2026 Tradex Innovations Team. All rights reserved.",
     "directories": {
       "output": "dist"

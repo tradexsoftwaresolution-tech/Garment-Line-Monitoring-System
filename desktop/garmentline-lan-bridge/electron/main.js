@@ -35,7 +35,7 @@ const defaultConfig = {
     enabled: true,
     cameraUrls: "http://10.10.4.101,http://10.10.4.102,http://10.10.4.103,http://10.10.4.104,http://10.10.4.105,http://10.10.4.106,http://10.10.4.107",
     username: "admin",
-    password: "",
+    password: "Knack7788",
     intervalSeconds: 5,
     lookbackMinutes: 60,
     maxResults: 30,
@@ -49,7 +49,7 @@ function createWindow() {
     height: 780,
     minWidth: 960,
     minHeight: 680,
-    title: "Integration Hub LAN Bridge",
+    title: "Integration Hub LAN Bridge_v2",
     backgroundColor: "#f6f4f3",
     icon: appIconPath(),
     webPreferences: {

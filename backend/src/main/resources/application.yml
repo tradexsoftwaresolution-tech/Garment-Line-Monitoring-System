@@ -39,7 +39,7 @@ app:
     base-url: ${HIKVISION_BASE_URL:}
     camera-urls: ${HIKVISION_CAMERA_URLS:http://10.10.4.101,http://10.10.4.102,http://10.10.4.103,http://10.10.4.104,http://10.10.4.105,http://10.10.4.106,http://10.10.4.107}
     username: ${HIKVISION_USERNAME:admin}
-    password: ${HIKVISION_PASSWORD:Knack123}
+    password: ${HIKVISION_PASSWORD:Knack7788}
     poll-interval-seconds: ${HIKVISION_POLL_INTERVAL_SECONDS:3}
     lookback-minutes: ${HIKVISION_LOOKBACK_MINUTES:60}
     bridge-token: ${BRIDGE_SHARED_TOKEN:${HIKVISION_BRIDGE_TOKEN:}}
