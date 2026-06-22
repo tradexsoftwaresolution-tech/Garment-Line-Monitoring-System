@@ -80,7 +80,7 @@ public class ZktecoAdmsService {
             : properties.admsDelaySeconds();
     String serverVersion =
         properties.serverVersion() == null || properties.serverVersion().isBlank()
-            ? "GarmentLine-ZKTeco-ADMS"
+            ? "LineMatrix-ZKTeco-ADMS"
             : properties.serverVersion().trim();
 
     return "GET OPTION FROM: " + serialNo + "\r\n"

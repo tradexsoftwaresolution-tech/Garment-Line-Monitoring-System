@@ -499,15 +499,39 @@ public class PublicDashboardService {
     return events.stream()
         .map(
             event -> {
+              String matchStatus =
+                  firstNonBlank(
+                      text(event, "match_status"),
+                      hasText(text(event, "employee_id")) || hasText(text(event, "employee_code"))
+                          ? "matched"
+                          : "unmatched");
               Map<String, Object> value = new LinkedHashMap<>();
               value.put("id", "hikvision-" + firstNonBlank(text(event, "id"), text(event, "camera_event_id"), text(event, "event_time")));
               if (hasText(text(event, "employee_id"))) {
                 value.put("workerId", text(event, "employee_id"));
               }
+              if (hasText(text(event, "employee_code"))) {
+                value.put("employeeNo", text(event, "employee_code"));
+              }
+              if (hasText(text(event, "device_person_name"))) {
+                value.put("devicePersonName", text(event, "device_person_name"));
+              }
+              if (hasText(text(event, "camera_name"))) {
+                value.put("cameraName", text(event, "camera_name"));
+              }
+              if (hasText(text(event, "camera_location"))) {
+                value.put("cameraLocation", text(event, "camera_location"));
+              }
+              value.put("matchStatus", matchStatus);
               value.put("timestamp", text(event, "event_time"));
               value.put("gate", firstNonBlank(text(event, "camera_name"), text(event, "camera_location"), "Hikvision Face"));
-              value.put("confidence", "matched".equals(text(event, "match_status")) ? 96 : 0);
-              value.put("outcome", "matched".equals(text(event, "match_status")) ? "matched" : "unknown");
+              value.put("confidence", "matched".equals(matchStatus) ? 96 : 0);
+              value.put("outcome", "matched".equals(matchStatus) ? "matched" : "unknown");
+              if (hasText(text(event, "picture_url"))) {
+                value.put("pictureUrl", text(event, "picture_url"));
+              } else if (hasText(text(event, "visible_light_pic_url"))) {
+                value.put("pictureUrl", text(event, "visible_light_pic_url"));
+              }
               return value;
             })
         .toList();

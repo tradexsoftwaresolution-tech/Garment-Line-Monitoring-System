@@ -58,7 +58,7 @@ export function LoginPage() {
   return (
     <AuthPageShell
       eyebrow="Secure access"
-      title="Sign in to GarmentLine"
+      title="Sign in to LineMatrix"
       description="Use your Supabase credentials to open the live operations workspace and continue with the same protected data across every screen."
       footer={
         <p className="ops-auth-footer-copy">

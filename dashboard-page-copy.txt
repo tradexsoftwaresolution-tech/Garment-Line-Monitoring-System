@@ -688,7 +688,7 @@ export function DashboardPage() {
         >
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <div style={{ fontSize: 15, fontWeight: 600, color: "#111318", letterSpacing: "-0.2px" }}>
-              Garment<span style={{ color: "#2563EB" }}>Line</span> — Operations Centre
+              Line<span style={{ color: "#2563EB" }}>Matrix</span> — Operations Centre
             </div>
             <div style={{ width: 1, height: 20, background: "#CACDD8" }} />
             <div style={{ fontSize: 13, fontWeight: 500, color: "#4B5063" }}>Dashboard Overview</div>

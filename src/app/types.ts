@@ -137,10 +137,16 @@ export interface LineOutputEntryRecord {
 export interface FaceEvent {
   id: string;
   workerId?: string;
+  employeeNo?: string;
+  devicePersonName?: string;
+  cameraName?: string;
+  cameraLocation?: string;
+  matchStatus?: "matched" | "unmatched" | string;
   timestamp: string;
   gate: string;
   confidence: number;
   outcome: "matched" | "unknown" | "duplicate";
+  pictureUrl?: string;
 }
 
 export interface FingerprintEvent {
@@ -241,6 +247,7 @@ export interface AlertRecord {
   assignedToUserId?: string;
   workerId?: string;
   lineId?: string;
+  derived?: boolean;
   history: AlertHistoryEntry[];
 }
 

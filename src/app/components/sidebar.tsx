@@ -52,7 +52,7 @@ export function Sidebar() {
             </div>
             <div>
               <div style={{ fontSize: 14, fontWeight: 600, color: "#111318", letterSpacing: "-0.2px" }}>
-                Garment<span style={{ color: "#2563EB" }}>Line</span>
+                Line<span style={{ color: "#2563EB" }}>Matrix</span>
               </div>
               <div style={{ fontSize: 11, color: "#8B90A0", marginTop: 1 }}>Factory Monitor</div>
             </div>

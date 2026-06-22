@@ -518,6 +518,110 @@ function buildTimeline(args: {
   return items.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 }
 
+const CONSECUTIVE_NO_SIGNAL_ALERT_DAYS = 7;
+
+function getLatestAttendanceDates(rows: ReconciliationRow[], latestAttendanceDate: string) {
+  return Array.from(
+    new Set(
+      rows
+        .map((row) => row.attendance_date)
+        .filter((date): date is string => Boolean(date) && date <= latestAttendanceDate)
+    )
+  )
+    .sort()
+    .slice(-CONSECUTIVE_NO_SIGNAL_ALERT_DAYS);
+}
+
+function hasFaceAttendanceSignal(row: ReconciliationRow) {
+  return Boolean(row.face_first_seen || row.face_last_seen || toNumber(row.face_event_count) > 0);
+}
+
+function hasFingerprintAttendanceSignal(row: ReconciliationRow) {
+  return Boolean(row.fingerprint_time_in || row.fingerprint_time_out);
+}
+
+function isApprovedLeaveReconciliation(row: ReconciliationRow) {
+  const status = row.manual_override_status || row.reconciliation_status;
+  return status === "leave" || Boolean(row.leave_type);
+}
+
+function buildConsecutiveNoSignalAlerts(args: {
+  workers: WorkerProfile[];
+  linesById: Map<string, ProductionLineRecord>;
+  rowsByEmployeeCode: Map<string, ReconciliationRow[]>;
+  allReconciliationRows: ReconciliationRow[];
+  latestAttendanceDate: string;
+}): AlertRecord[] {
+  const attendanceDates = getLatestAttendanceDates(
+    args.allReconciliationRows,
+    args.latestAttendanceDate
+  );
+
+  if (attendanceDates.length < CONSECUTIVE_NO_SIGNAL_ALERT_DAYS) {
+    return [];
+  }
+
+  const firstDate = attendanceDates[0];
+  const lastDate = attendanceDates[attendanceDates.length - 1];
+
+  return args.workers.flatMap((worker) => {
+    if (worker.joinDate && worker.joinDate > firstDate) {
+      return [];
+    }
+
+    const workerRows = args.rowsByEmployeeCode.get(worker.employeeId) || [];
+    const missedDates: string[] = [];
+
+    for (const date of attendanceDates) {
+      const dayRows = workerRows.filter((row) => row.attendance_date === date);
+
+      if (dayRows.some(isApprovedLeaveReconciliation)) {
+        return [];
+      }
+
+      const hasAnySignal = dayRows.some(
+        (row) => hasFaceAttendanceSignal(row) || hasFingerprintAttendanceSignal(row)
+      );
+
+      if (!hasAnySignal) {
+        missedDates.push(date);
+      }
+    }
+
+    if (missedDates.length !== CONSECUTIVE_NO_SIGNAL_ALERT_DAYS) {
+      return [];
+    }
+
+    const line = worker.currentLineId ? args.linesById.get(worker.currentLineId) : undefined;
+    const lineText = line ? ` Current line: ${line.name} (${line.code}).` : "";
+    const alertId = `derived-seven-day-no-signal-${worker.id}`;
+
+    return [
+      {
+        id: alertId,
+        type: "attendance anomaly",
+        priority: "critical",
+        title: "No face or fingerprint attendance for 7 days",
+        description: `${worker.fullName} (${worker.employeeId}) has no face recognition or fingerprint attendance signal for seven consecutive attendance days (${firstDate} to ${lastDate}).${lineText}`,
+        createdAt: toLocalTimestamp(lastDate, "00:00:00"),
+        status: "Open",
+        workerId: worker.id,
+        lineId: worker.currentLineId,
+        derived: true,
+        history: [
+          {
+            id: `${alertId}-history`,
+            timestamp: toLocalTimestamp(lastDate, "00:00:00"),
+            user: "System",
+            action:
+              "Detected seven consecutive attendance days without face recognition or fingerprint verification.",
+          },
+        ],
+      } satisfies AlertRecord,
+    ];
+  });
+}
+
 function mapLine(args: {
   line: ProductionLineRow;
   latestMetric?: ProductionLineMetricRow;
@@ -1126,8 +1230,27 @@ export async function getOperationsSnapshot(
     rowsByEmployeeCode.set(row.employee_code, next);
   });
 
+  const currentDate = currentAttendanceDate();
+  const latestDataAttendanceDate = [
+    reconciliationRows[0]?.attendance_date,
+    fingerprintRows[0]?.attendance_date,
+  ]
+    .filter((date): date is string => Boolean(date))
+    .sort()
+    .at(-1);
+  const latestAttendanceDate =
+    latestDataAttendanceDate && latestDataAttendanceDate <= currentDate
+      ? latestDataAttendanceDate
+      : currentDate;
+  const currentReconciliationRows = reconciliationRows.filter(
+    (row) => row.attendance_date === latestAttendanceDate
+  );
+  const currentFingerprintRows = fingerprintRows.filter(
+    (row) => row.attendance_date === latestAttendanceDate
+  );
+
   const latestRowByEmployeeCode = new Map<string, ReconciliationRow>();
-  reconciliationRows.forEach((row) => {
+  currentReconciliationRows.forEach((row) => {
     if (!latestRowByEmployeeCode.has(row.employee_code)) {
       latestRowByEmployeeCode.set(row.employee_code, row);
     }
@@ -1142,7 +1265,7 @@ export async function getOperationsSnapshot(
 
   const latestFingerprintRowByEmployeeCode = new Map<string, FingerprintAttendanceRow>();
   const fingerprintRowByEmployeeCodeAndDate = new Map<string, FingerprintAttendanceRow>();
-  fingerprintRows.forEach((row) => {
+  currentFingerprintRows.forEach((row) => {
     if (!latestFingerprintRowByEmployeeCode.has(row.employee_code)) {
       latestFingerprintRowByEmployeeCode.set(row.employee_code, row);
     }
@@ -1152,11 +1275,7 @@ export async function getOperationsSnapshot(
     }
   });
 
-  const latestAttendanceDate =
-    reconciliationRows[0]?.attendance_date ||
-    fingerprintRows[0]?.attendance_date ||
-    currentAttendanceDate();
-  const fingerprintDeviceAttendanceDate = currentAttendanceDate();
+  const fingerprintDeviceAttendanceDate = latestAttendanceDate;
   const zktecoFingerprintEvents = await listZktecoFingerprintEventsForDate(
     client,
     fingerprintDeviceAttendanceDate
@@ -1170,13 +1289,12 @@ export async function getOperationsSnapshot(
     const profile = employeeProfilesByEmployeeId.get(employee.id);
     const notes = employeeNotesByEmployeeId.get(employee.id) || [];
     const latestRow = latestRowByEmployeeCode.get(employee.employee_code);
-    const effectiveAttendanceDate = latestRow?.attendance_date || latestAttendanceDate;
+    const effectiveAttendanceDate = latestAttendanceDate;
     const sameDateFingerprintRow = fingerprintRowByEmployeeCodeAndDate.get(
       `${employee.employee_code}:${effectiveAttendanceDate}`
     );
     const latestFingerprintRow =
-      sameDateFingerprintRow ||
-      (latestRow ? undefined : latestFingerprintRowByEmployeeCode.get(employee.employee_code));
+      sameDateFingerprintRow || latestFingerprintRowByEmployeeCode.get(employee.employee_code);
     const assignment = activeAssignmentsByEmployeeId.get(employee.id);
     const transfers = transfersByEmployeeId.get(employee.id) || [];
     const validationStatus = mapValidationStatus(latestRow, notes);
@@ -1312,10 +1430,11 @@ export async function getOperationsSnapshot(
 
   const attendanceOverview = buildAttendanceOverview(mappedWorkers, latestAttendanceDate);
   const departmentAttendance = buildDepartmentAttendance(mappedWorkers);
+  const linesById = new Map(mappedLines.map((line) => [line.id, line]));
   const workersById = new Map(mappedWorkers.map((worker) => [worker.id, worker]));
   const workersByCode = new Map(mappedWorkers.map((worker) => [worker.employeeId, worker]));
 
-  const validationRecords = reconciliationRows.map<{
+  const validationRecords = currentReconciliationRows.map<{
     id: string;
     workerId?: string;
     employeeId: string;
@@ -1390,7 +1509,7 @@ export async function getOperationsSnapshot(
     historyByAlertId.set(entry.alert_id, next);
   });
 
-  const alertsForUi = alerts.map<AlertRecord>((alert) => ({
+  const persistedAlertsForUi = alerts.map<AlertRecord>((alert) => ({
     id: alert.id,
     type: alert.alert_type,
     priority: alert.priority,
@@ -1412,6 +1531,16 @@ export async function getOperationsSnapshot(
         action: entry.action,
       })) || [],
   }));
+  const consecutiveNoSignalAlerts = buildConsecutiveNoSignalAlerts({
+    workers: mappedWorkers,
+    linesById,
+    rowsByEmployeeCode,
+    allReconciliationRows: reconciliationRows,
+    latestAttendanceDate,
+  });
+  const alertsForUi = [...consecutiveNoSignalAlerts, ...persistedAlertsForUi].sort((a, b) =>
+    b.createdAt.localeCompare(a.createdAt)
+  );
 
   const attendanceSummaries = buildAttendanceSummaries({
     workers: mappedWorkers,
@@ -1469,7 +1598,7 @@ export async function getOperationsSnapshot(
         }))
       : [{ id: "announcement-empty", message: "No current announcements." }];
 
-  const faceEvents = reconciliationRows
+  const faceEvents = currentReconciliationRows
     .filter((row) => toNumber(row.face_event_count) > 0)
     .map<FaceEvent>((row) => ({
       id: `face-${row.id}`,
@@ -1483,10 +1612,10 @@ export async function getOperationsSnapshot(
           : "matched",
     }));
 
-  const fingerprintEvents = reconciliationRows
+  const fingerprintEvents = currentReconciliationRows
     .filter((row) => row.fingerprint_time_in || row.fingerprint_time_out);
 
-  const fingerprintEventsFromAttendance = fingerprintRows
+  const fingerprintEventsFromAttendance = currentFingerprintRows
     .filter((row) => row.time_in || row.time_out)
     .map<FingerprintEvent>((row) => ({
       id: `fingerprint-${row.id}`,

@@ -12,7 +12,7 @@
 	<artifactId>operations-backend</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name>operations-backend</name>
-	<description>GarmentLine Operations Backend</description>
+	<description>LineMatrix Operations Backend</description>
 	<url/>
 	<licenses>
 		<license/>

@@ -107,7 +107,7 @@ export function ReportsPage() {
         pin.lastPunch,
         `${pin.punchCount}`,
         pin.deviceIps.join(" | "),
-        "Not registered in GarmentLine",
+        "Not registered in LineMatrix",
       ]),
     ],
     [resolvedFingerprintDeviceSummary.unregisteredPins]

@@ -43,7 +43,7 @@ export function EmployeePortalQrPage() {
             <div className="ops-brand-mark-small">
               <QrCode size={24} />
             </div>
-            <h2>GarmentLine Recognition Display</h2>
+            <h2>LineMatrix Recognition Display</h2>
             <p>Open the public display and keep it ready for the ANPR face recognition camera.</p>
             <div className="ops-portal-url">{targetUrl}</div>
           </div>

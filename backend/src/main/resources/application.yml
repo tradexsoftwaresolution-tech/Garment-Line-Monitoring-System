@@ -47,7 +47,7 @@ app:
     comm-key: ${ZKTECO_ADMS_COMM_KEY:}
     time-zone: ${ZKTECO_TIME_ZONE:Asia/Colombo}
     adms-delay-seconds: ${ZKTECO_ADMS_DELAY_SECONDS:10}
-    server-version: ${ZKTECO_ADMS_SERVER_VERSION:GarmentLine-ZKTeco-ADMS}
+    server-version: ${ZKTECO_ADMS_SERVER_VERSION:LineMatrix-ZKTeco-ADMS}
   employee-portal:
     time-zone: ${EMPLOYEE_PORTAL_TIME_ZONE:Asia/Colombo}
     session-hours: ${EMPLOYEE_PORTAL_SESSION_HOURS:168}

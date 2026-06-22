@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useAuth } from "../auth";
 import { useOperations } from "../operations-context";
-import type { AlertState } from "../types";
+import type { AlertRecord, AlertState } from "../types";
 import {
   AlertItem,
   Button,
@@ -40,20 +40,82 @@ export function AlertsCenterPage() {
     setFeedback(result.message);
   };
 
-  const filteredAlerts = alerts.filter((alert) => {
+  const matchesActiveFilters = (alert: AlertRecord) => {
     const matchesPriority = priorityFilter === "All" || alert.priority === priorityFilter;
     const matchesStatus = statusFilter === "All" || alert.status === statusFilter;
     return matchesPriority && matchesStatus;
-  });
+  };
+
+  const sevenDayNoSignalAlerts = alerts.filter((alert) => alert.derived);
+  const operationalAlerts = alerts.filter((alert) => !alert.derived);
+  const filteredSevenDayNoSignalAlerts = sevenDayNoSignalAlerts.filter(matchesActiveFilters);
+  const filteredOperationalAlerts = operationalAlerts.filter(matchesActiveFilters);
 
   const counts = useMemo(
     () => ({
-      critical: alerts.filter((item) => item.priority === "critical").length,
-      high: alerts.filter((item) => item.priority === "high").length,
-      open: alerts.filter((item) => item.status === "Open").length,
-      resolved: alerts.filter((item) => item.status === "Resolved").length,
+      critical: operationalAlerts.filter((item) => item.priority === "critical").length,
+      high: operationalAlerts.filter((item) => item.priority === "high").length,
+      open: operationalAlerts.filter((item) => item.status === "Open").length,
+      resolved: operationalAlerts.filter((item) => item.status === "Resolved").length,
+      sevenDayNoSignal: sevenDayNoSignalAlerts.length,
     }),
-    [alerts]
+    [operationalAlerts, sevenDayNoSignalAlerts]
+  );
+
+  const renderAlertItem = (alert: AlertRecord) => (
+    <AlertItem
+      key={alert.id}
+      priority={alert.priority}
+      title={alert.title}
+      description={alert.description}
+      meta={
+        <>
+          <span>{formatDateTime(alert.createdAt)}</span>
+          <span>{alert.type}</span>
+          <span>{alert.status}</span>
+          {alert.derived ? <span>system generated</span> : null}
+        </>
+      }
+      actions={
+        alert.derived ? (
+          <StatusBadge label="System generated" tone="info" />
+        ) : (
+          <>
+            {alert.status !== "Read" ? (
+              <Button
+                tone="secondary"
+                onClick={() => void handleStatusChange(alert.id, "Read")}
+              >
+                Mark as read
+              </Button>
+            ) : null}
+            {alert.status !== "Resolved" ? (
+              <Button
+                tone="primary"
+                onClick={() => void handleStatusChange(alert.id, "Resolved")}
+              >
+                Resolve
+              </Button>
+            ) : null}
+            <select
+              className="ops-select"
+              style={{ maxWidth: 220 }}
+              value={alert.assignedToUserId || ""}
+              onChange={(event) => void handleAssign(alert.id, event.target.value)}
+            >
+              <option value="" disabled>
+                Assign to
+              </option>
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name}
+                </option>
+              ))}
+            </select>
+          </>
+        )
+      }
+    />
   );
 
   return (
@@ -79,7 +141,7 @@ export function AlertsCenterPage() {
         <KpiCard
           label="Critical"
           value={`${counts.critical}`}
-          meta="Immediate operational attention required."
+          meta="Manual operational alerts requiring attention."
           icon={AlertTriangle}
           accent="var(--ops-danger)"
           soft="var(--ops-danger-soft)"
@@ -108,6 +170,14 @@ export function AlertsCenterPage() {
           accent="var(--ops-success)"
           soft="var(--ops-success-soft)"
         />
+        <KpiCard
+          label="7-Day No Signal"
+          value={`${counts.sevenDayNoSignal}`}
+          meta="Employees with no face or fingerprint attendance for seven attendance days."
+          icon={ShieldAlert}
+          accent="var(--ops-danger)"
+          soft="var(--ops-danger-soft)"
+        />
       </section>
 
       <div className="ops-filter-bar">
@@ -126,65 +196,33 @@ export function AlertsCenterPage() {
         </select>
       </div>
 
-      {filteredAlerts.length ? (
-        <div className="ops-list">
-          {filteredAlerts.map((alert) => (
-            <AlertItem
-              key={alert.id}
-              priority={alert.priority}
-              title={alert.title}
-              description={alert.description}
-              meta={
-                <>
-                  <span>{formatDateTime(alert.createdAt)}</span>
-                  <span>{alert.type}</span>
-                  <span>{alert.status}</span>
-                </>
-              }
-              actions={
-                <>
-                  {alert.status !== "Read" ? (
-                    <Button
-                      tone="secondary"
-                      onClick={() => void handleStatusChange(alert.id, "Read")}
-                    >
-                      Mark as read
-                    </Button>
-                  ) : null}
-                  {alert.status !== "Resolved" ? (
-                    <Button
-                      tone="primary"
-                      onClick={() => void handleStatusChange(alert.id, "Resolved")}
-                    >
-                      Resolve
-                    </Button>
-                  ) : null}
-                  <select
-                    className="ops-select"
-                    style={{ maxWidth: 220 }}
-                    value={alert.assignedToUserId || ""}
-                    onChange={(event) => void handleAssign(alert.id, event.target.value)}
-                  >
-                    <option value="" disabled>
-                      Assign to
-                    </option>
-                    {users.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
-                  </select>
-                </>
-              }
-            />
-          ))}
-        </div>
-      ) : (
-        <EmptyState
-          title="No alerts matched the current filters"
-          description="Change the priority or status filter to inspect another part of the alert queue."
-        />
-      )}
+      <Card
+        title="Seven-Day No Face/Fingerprint Alerts"
+        subtitle="System-generated employees with no face or fingerprint attendance for seven consecutive attendance days."
+      >
+        {filteredSevenDayNoSignalAlerts.length ? (
+          <div className="ops-list">{filteredSevenDayNoSignalAlerts.map(renderAlertItem)}</div>
+        ) : (
+          <EmptyState
+            title="No seven-day attendance gaps detected"
+            description="Employees will appear here when they have no face or fingerprint signal for seven attendance days."
+          />
+        )}
+      </Card>
+
+      <Card
+        title="Operational Alert Queue"
+        subtitle="Manual supervisor and HR alerts with assignment, read state, and resolution workflow."
+      >
+        {filteredOperationalAlerts.length ? (
+          <div className="ops-list">{filteredOperationalAlerts.map(renderAlertItem)}</div>
+        ) : (
+          <EmptyState
+            title="No operational alerts matched the current filters"
+            description="Change the priority or status filter to inspect another part of the alert queue."
+          />
+        )}
+      </Card>
 
       <Card title="Alert History Log" subtitle="Latest alert actions and ownership changes.">
         <div className="ops-table-wrap">
@@ -209,7 +247,7 @@ export function AlertsCenterPage() {
                     <StatusBadge label={alert.priority.toUpperCase()} tone={priorityTone(alert.priority)} />
                   </td>
                   <td>{alert.history[0]?.action || "No history"}</td>
-                  <td>{users.find((user) => user.id === alert.assignedToUserId)?.name || "Unassigned"}</td>
+                  <td>{alert.derived ? "System generated" : users.find((user) => user.id === alert.assignedToUserId)?.name || "Unassigned"}</td>
                   <td>{alert.status}</td>
                 </tr>
               ))}

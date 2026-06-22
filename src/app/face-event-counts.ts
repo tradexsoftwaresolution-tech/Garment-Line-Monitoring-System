@@ -60,7 +60,7 @@ function faceEventMatched(event: HikvisionRecognitionEvent | FaceEvent) {
     return event.matchStatus === "matched";
   }
 
-  return event.outcome === "matched";
+  return event.matchStatus === "matched" || event.outcome === "matched";
 }
 
 function faceEventLabel(event: HikvisionRecognitionEvent | FaceEvent) {
@@ -68,7 +68,7 @@ function faceEventLabel(event: HikvisionRecognitionEvent | FaceEvent) {
     return event.employeeNo || event.devicePersonName || event.serialNo || event.id;
   }
 
-  return event.workerId || event.id;
+  return event.employeeNo || event.devicePersonName || event.workerId || event.id;
 }
 
 function isHikvisionRecognitionEvent(event: HikvisionRecognitionEvent | FaceEvent): event is HikvisionRecognitionEvent {

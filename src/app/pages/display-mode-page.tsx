@@ -33,7 +33,7 @@ export function DisplayModePage() {
     <div className="ops-display">
       <div className="ops-display-header">
         <div>
-          <div className="ops-display-title">GarmentLine Public Display</div>
+          <div className="ops-display-title">LineMatrix Public Display</div>
           <div className="ops-display-subtitle">
             Shift A · {now.toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" })} · {now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
           </div>

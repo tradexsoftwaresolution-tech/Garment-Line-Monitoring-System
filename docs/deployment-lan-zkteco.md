@@ -58,7 +58,7 @@ HIKVISION_BRIDGE_TOKEN=change-this-long-random-token
 ZKTECO_ADMS_COMM_KEY=
 ZKTECO_TIME_ZONE=Asia/Colombo
 ZKTECO_ADMS_DELAY_SECONDS=10
-ZKTECO_ADMS_SERVER_VERSION=GarmentLine-ZKTeco-ADMS
+ZKTECO_ADMS_SERVER_VERSION=LineMatrix-ZKTeco-ADMS
 ```
 
 Leave `ZKTECO_ADMS_COMM_KEY` empty unless you configure the same key on the devices or bridge.

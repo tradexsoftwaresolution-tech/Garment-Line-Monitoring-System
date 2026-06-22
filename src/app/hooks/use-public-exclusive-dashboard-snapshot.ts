@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { getPublicExclusiveDashboardSnapshotFromBackend } from "@/lib/backend/pipeline-api";
 import { isBackendConfigured } from "@/lib/backend/env";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getOperationsSnapshot } from "@/server/operations/operations-service";
 import type { OperationsSnapshot } from "@/types/operations";
 
 export const EMPTY_PUBLIC_OPERATIONS_SNAPSHOT: OperationsSnapshot = {
@@ -72,17 +74,24 @@ export function usePublicExclusiveDashboardSnapshot(
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!isBackendConfigured()) {
-      setError("VITE_BACKEND_URL is not configured.");
-      setIsLoading(false);
-      return;
-    }
-
     try {
-      const nextSnapshot = await getPublicExclusiveDashboardSnapshotFromBackend(attendanceDate);
+      const nextSnapshot = isBackendConfigured()
+        ? await getPublicExclusiveDashboardSnapshotFromBackend(attendanceDate)
+        : await getPublicExclusiveDashboardSnapshotFromSupabase();
       setSnapshot(nextSnapshot);
       setError(null);
     } catch (requestError) {
+      if (isBackendConfigured()) {
+        try {
+          const fallbackSnapshot = await getPublicExclusiveDashboardSnapshotFromSupabase();
+          setSnapshot(fallbackSnapshot);
+          setError(null);
+          return;
+        } catch (_fallbackError) {
+          // Keep the backend error visible; it is the primary data path for this public page.
+        }
+      }
+
       setError(requestError instanceof Error ? requestError.message : "Could not load dashboard data.");
     } finally {
       setIsLoading(false);
@@ -103,4 +112,20 @@ export function usePublicExclusiveDashboardSnapshot(
   }, [refresh, refreshMs]);
 
   return { snapshot, isLoading, error, refresh };
+}
+
+async function getPublicExclusiveDashboardSnapshotFromSupabase() {
+  const client = getSupabaseBrowserClient();
+
+  if (!client) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  return getOperationsSnapshot(client, {
+    includeAuditLogs: false,
+    includeEmployeeNotes: false,
+    includeSystemSettings: false,
+    includeProfileDirectory: false,
+    syncReconciliationAlerts: false,
+  });
 }

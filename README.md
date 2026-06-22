@@ -1,6 +1,6 @@
-# Garment Line Monitoring Dashboard
+# LineMatrix Operations Dashboard
 
-GarmentLine Operations Centre now targets a `React frontend + Spring Boot backend + Supabase` architecture.
+LineMatrix Operations Centre now targets a `React frontend + Spring Boot backend + Supabase` architecture.
 
 The frontend still runs as a Vite single-page app, Supabase remains the managed platform for Postgres/Auth/Storage, and the repository now includes a Spring Boot service that is starting to own import, normalization, reconciliation, and validation APIs.
 

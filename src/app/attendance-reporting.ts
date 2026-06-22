@@ -66,6 +66,16 @@ export const ATTENDANCE_REPORT_FILTERS: Array<{
   },
 ];
 
+export const ATTENDANCE_MISSING_SIGNAL_FILTERS: Array<{
+  value: Extract<AttendanceReportFilter, "all" | "face-missing" | "fingerprint-missing" | "both-missing">;
+  label: string;
+}> = [
+  { value: "all", label: "All employees" },
+  { value: "face-missing", label: "Face not attended" },
+  { value: "fingerprint-missing", label: "Fingerprint not attended" },
+  { value: "both-missing", label: "Both not attended" },
+];
+
 export function hasFaceAttendance(worker: WorkerProfile) {
   return worker.faceVerificationStatus === "Verified";
 }

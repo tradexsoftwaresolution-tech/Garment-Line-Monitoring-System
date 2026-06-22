@@ -85,7 +85,7 @@ export function SignUpPage() {
     <AuthPageShell
       eyebrow="Create account"
       title="Sign up for workspace access"
-      description="Create a Supabase-backed account for GarmentLine. New self-registered users start as Viewer until an administrator promotes their role."
+      description="Create a Supabase-backed account for LineMatrix. New self-registered users start as Viewer until an administrator promotes their role."
       footer={
         <p className="ops-auth-footer-copy">
           Already have credentials? <Link to="/login" state={{ from: redirectTo }}>Go to sign in</Link>.

@@ -194,7 +194,7 @@ export function Layout() {
           </div>
           <div>
             <div className="ops-brand-title">
-              Garment<span>Line</span>
+              Line<span>Matrix</span>
             </div>
             <div className="ops-brand-subtitle">Operations Centre</div>
           </div>

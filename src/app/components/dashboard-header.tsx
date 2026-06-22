@@ -61,7 +61,7 @@ export function DashboardHeader() {
           {/* ── Left: branding + date ── */}
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <div style={{ fontSize: 15, fontWeight: 600, color: "#111318", letterSpacing: "-0.2px", whiteSpace: "nowrap" }}>
-              Garment<span style={{ color: "#2563EB" }}>Line</span> — Operations Centre
+              Line<span style={{ color: "#2563EB" }}>Matrix</span> — Operations Centre
             </div>
             <div style={{ width: 1, height: 20, background: "#CACDD8", flexShrink: 0 }} />
             <div style={{ fontSize: 12, color: "#8B90A0", whiteSpace: "nowrap" }}>{dateStr}</div>

@@ -116,7 +116,7 @@ public class HikvisionIsapiClient {
         HttpRequest.newBuilder(uri)
             .timeout(REQUEST_TIMEOUT)
             .header("Accept", "application/json, application/xml, text/xml, */*")
-            .header("User-Agent", "GarmentLine-Hikvision-ISAPI/1.0");
+            .header("User-Agent", "LineMatrix-Hikvision-ISAPI/1.0");
 
     if (authorization != null && !authorization.isBlank()) {
       builder.header("Authorization", authorization);

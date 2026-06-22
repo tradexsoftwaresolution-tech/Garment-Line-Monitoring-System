@@ -4,7 +4,7 @@ Calculation Engine
 Overview
 --------
 
-GarmentLine now contains a dedicated calculation module for workbook-style
+LineMatrix now contains a dedicated calculation module for workbook-style
 production efficiency and incentive logic. The backend owns this flow so the
 frontend never becomes the source of truth for formulas, thresholds, or payout
 rules.

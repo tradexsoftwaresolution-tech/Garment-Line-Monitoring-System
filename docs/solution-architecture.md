@@ -1,6 +1,6 @@
-# GarmentLine Solution Architecture
+# LineMatrix Solution Architecture
 
-This document describes the target architecture for **GarmentLine - Operations Centre** as a:
+This document describes the target architecture for **LineMatrix - Operations Centre** as a:
 
 - `React / Vite frontend`
 - `Spring Boot backend`

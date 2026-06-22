@@ -2,7 +2,7 @@
 
 ## Overview
 
-The GarmentLine backend uses Supabase for:
+The LineMatrix backend uses Supabase for:
 
 - authentication and profile roles
 - storage of original import files

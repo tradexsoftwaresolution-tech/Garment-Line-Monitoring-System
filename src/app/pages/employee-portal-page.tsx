@@ -28,7 +28,7 @@ import {
   getInitials,
 } from "../components/ops-ui";
 
-const PORTAL_TOKEN_STORAGE_KEY = "garmentline.employeePortalToken";
+const PORTAL_TOKEN_STORAGE_KEY = "linematrix.employeePortalToken";
 
 const EMPTY_PORTAL: EmployeePortalSnapshot = {
   linked: false,

@@ -4,7 +4,7 @@ Incentive Calculation Flow
 Purpose
 -------
 
-This document describes how GarmentLine converts production inputs into
+This document describes how LineMatrix converts production inputs into
 efficiency metrics, incentive outcomes, persisted snapshots, and reportable
 results.
 

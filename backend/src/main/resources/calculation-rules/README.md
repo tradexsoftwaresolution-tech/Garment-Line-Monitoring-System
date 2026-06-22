@@ -2,7 +2,7 @@ Calculation Rules Folder
 ========================
 
 This folder contains the editable rule sets that drive efficiency calculations,
-incentive ladder lookups, and aggregation behavior for GarmentLine.
+incentive ladder lookups, and aggregation behavior for LineMatrix.
 
 Safe update steps
 -----------------
@@ -37,4 +37,3 @@ Validation before deployment
 - Check `/api/calculation-rules`
 - Check `/api/calculation-rules/efficiency`
 - Check `/api/calculation-rules/incentives`
-

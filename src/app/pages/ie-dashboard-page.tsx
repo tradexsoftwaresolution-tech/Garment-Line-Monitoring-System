@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { BarChart3, CheckCircle2, Fingerprint, ScanFace, Users } from "lucide-react";
+import {
+  ATTENDANCE_MISSING_SIGNAL_FILTERS,
+  type AttendanceReportFilter,
+  matchesAttendanceReportFilter,
+} from "../attendance-reporting";
 import { useOperations, findLine } from "../operations-context";
 import { buildHikvisionFaceEventSummary } from "../face-event-counts";
 import { resolveFingerprintDeviceSummary } from "../fingerprint-device-counts";
@@ -31,15 +36,22 @@ export function IeDashboardPage() {
   const { events: hikvisionFaceEvents } = useHikvisionFaceEvents(500);
   const { events: zktecoFingerprintEvents } = useZktecoFingerprintEvents(5000);
   const [query, setQuery] = useState("");
+  const [attendanceSignalFilter, setAttendanceSignalFilter] =
+    useState<AttendanceReportFilter>("all");
   const [employeePage, setEmployeePage] = useState(1);
 
   const filteredWorkers = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    if (!normalized) {
-      return workers;
-    }
 
     return workers.filter((worker) => {
+      if (!matchesAttendanceReportFilter(worker, attendanceSignalFilter)) {
+        return false;
+      }
+
+      if (!normalized) {
+        return true;
+      }
+
       const line = findLine(lines, worker.currentLineId);
       return [
         worker.fullName,
@@ -54,7 +66,7 @@ export function IeDashboardPage() {
         .toLowerCase()
         .includes(normalized);
     });
-  }, [lines, query, workers]);
+  }, [attendanceSignalFilter, lines, query, workers]);
 
   const totalEmployeePages = Math.max(1, Math.ceil(filteredWorkers.length / EMPLOYEE_PAGE_SIZE));
   const pagedWorkers = useMemo(() => {
@@ -66,7 +78,7 @@ export function IeDashboardPage() {
 
   useEffect(() => {
     setEmployeePage(1);
-  }, [query]);
+  }, [attendanceSignalFilter, query]);
 
   useEffect(() => {
     setEmployeePage((current) => Math.min(current, totalEmployeePages));
@@ -152,6 +164,20 @@ export function IeDashboardPage() {
             <StatusBadge label={`${unmatchedFingerprintCount} unmatched fingerprint PINs`} tone="warning" />
             <StatusBadge label={`${unmatchedFaceCount} unmatched face events`} tone="warning" />
             <SearchField value={query} onChange={setQuery} placeholder="Search employee, line, or department" />
+            <select
+              className="ops-select"
+              style={{ flex: "0 0 230px" }}
+              value={attendanceSignalFilter}
+              onChange={(event) =>
+                setAttendanceSignalFilter(event.target.value as AttendanceReportFilter)
+              }
+            >
+              {ATTENDANCE_MISSING_SIGNAL_FILTERS.map((filter) => (
+                <option key={filter.value} value={filter.value}>
+                  {filter.label}
+                </option>
+              ))}
+            </select>
           </>
         }
       >

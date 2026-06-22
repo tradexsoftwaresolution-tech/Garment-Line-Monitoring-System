@@ -39,4 +39,4 @@ services:
       - key: ZKTECO_ADMS_DELAY_SECONDS
         value: 10
       - key: ZKTECO_ADMS_SERVER_VERSION
-        value: GarmentLine-ZKTeco-ADMS
+        value: LineMatrix-ZKTeco-ADMS

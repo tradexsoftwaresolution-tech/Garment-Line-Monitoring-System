@@ -16,13 +16,19 @@ import {
   Users,
 } from "lucide-react";
 import { DetailDrawer, StatusBadge, WorkerChip, attendanceTone } from "../components/ops-ui";
+import {
+  ATTENDANCE_MISSING_SIGNAL_FILTERS,
+  type AttendanceReportFilter,
+  matchesAttendanceReportFilter,
+} from "../attendance-reporting";
 import { buildHikvisionFaceEventSummary } from "../face-event-counts";
 import { usePublicExclusiveDashboardSnapshot } from "../hooks/use-public-exclusive-dashboard-snapshot";
-import type { ProductionLineRecord, WorkerProfile } from "../types";
+import type { FaceEvent, ProductionLineRecord, WorkerProfile } from "../types";
 
 type Tone = "good" | "warning" | "danger" | "info" | "neutral";
 type TabId = "today" | "mismatch" | "employees" | "lines";
-type MismatchFilter = "all" | "fingerprint" | "face";
+type MismatchKind = "camera-missed" | "fingerprint-missed" | "none";
+type MismatchFilter = "all" | "camera-missed" | "unregistered-face" | "fingerprint-missed";
 type EmployeeFilter = "attention" | "absent" | "late" | "present";
 
 type Issue = {
@@ -41,8 +47,9 @@ const NAV_ITEMS = [
 
 const MISMATCH_FILTERS = [
   { id: "all", label: "All" },
-  { id: "fingerprint", label: "Fingerprint only" },
-  { id: "face", label: "Face only" },
+  { id: "camera-missed", label: "Camera missed" },
+  { id: "unregistered-face", label: "Not registered" },
+  { id: "fingerprint-missed", label: "Fingerprint missed" },
 ] satisfies Array<{ id: MismatchFilter; label: string }>;
 
 const EMPLOYEE_FILTERS = [
@@ -130,12 +137,12 @@ function yesNo(value: boolean) {
 function mismatchKind(worker: {
   faceVerificationStatus: string;
   fingerprintVerificationStatus: string;
-}) {
+}): MismatchKind {
   const fingerprintVerified = isVerified(worker.fingerprintVerificationStatus);
   const faceVerified = isVerified(worker.faceVerificationStatus);
 
-  if (fingerprintVerified && !faceVerified) return "fingerprint";
-  if (faceVerified && !fingerprintVerified) return "face";
+  if (fingerprintVerified && !faceVerified) return "camera-missed";
+  if (faceVerified && !fingerprintVerified) return "fingerprint-missed";
   return "none";
 }
 
@@ -144,9 +151,50 @@ function mismatchLabel(worker: {
   fingerprintVerificationStatus: string;
 }) {
   const kind = mismatchKind(worker);
-  if (kind === "fingerprint") return "Fingerprint only";
-  if (kind === "face") return "Face only";
+  if (kind === "camera-missed") return "Face not detected";
+  if (kind === "fingerprint-missed") return "Fingerprint not detected";
   return "Needs review";
+}
+
+function isFaceEventMatched(event: FaceEvent) {
+  return event.matchStatus === "matched" || event.outcome === "matched";
+}
+
+function faceEventPersonLabel(event: FaceEvent) {
+  return event.employeeNo || event.devicePersonName || "Unknown person";
+}
+
+function faceEventCameraLabel(event: FaceEvent) {
+  return event.cameraName || event.cameraLocation || event.gate || "Hikvision camera";
+}
+
+function faceEventSearchText(event: FaceEvent) {
+  return [
+    event.employeeNo,
+    event.devicePersonName,
+    event.cameraName,
+    event.cameraLocation,
+    event.gate,
+    event.matchStatus,
+    event.outcome,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function formatEventDateTime(value?: string) {
+  if (!value) return "Time not captured";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function normalizeSearch(value: string) {
@@ -198,6 +246,8 @@ export function IeFullDashboardPage() {
   const [mismatchQuery, setMismatchQuery] = useState("");
   const [mismatchVisibleCount, setMismatchVisibleCount] = useState(MISMATCH_PAGE_SIZE);
   const [employeeFilter, setEmployeeFilter] = useState<EmployeeFilter>("attention");
+  const [employeeSignalFilter, setEmployeeSignalFilter] =
+    useState<AttendanceReportFilter>("all");
   const [employeeQuery, setEmployeeQuery] = useState("");
   const [employeeVisibleCount, setEmployeeVisibleCount] = useState(EMPLOYEE_PAGE_SIZE);
   const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null);
@@ -253,17 +303,57 @@ export function IeFullDashboardPage() {
     [workers]
   );
 
-  const filteredMismatchWorkers = useMemo(() => {
+  const registeredCameraMissedWorkers = useMemo(
+    () => mismatchWorkers.filter((worker) => mismatchKind(worker) === "camera-missed"),
+    [mismatchWorkers]
+  );
+  const registeredFingerprintMissedWorkers = useMemo(
+    () => mismatchWorkers.filter((worker) => mismatchKind(worker) === "fingerprint-missed"),
+    [mismatchWorkers]
+  );
+  const unregisteredFaceEvents = useMemo(
+    () =>
+      faceEvents
+        .filter((event) => !isFaceEventMatched(event))
+        .sort((a, b) => {
+          const firstTime = new Date(a.timestamp).getTime();
+          const secondTime = new Date(b.timestamp).getTime();
+          return (Number.isNaN(secondTime) ? 0 : secondTime) - (Number.isNaN(firstTime) ? 0 : firstTime);
+        }),
+    [faceEvents]
+  );
+
+  const filteredRegisteredCameraMissedWorkers = useMemo(() => {
+    if (mismatchFilter !== "all" && mismatchFilter !== "camera-missed") return [];
     const normalized = normalizeSearch(mismatchQuery);
 
-    return mismatchWorkers.filter((worker) => {
-      const kind = mismatchKind(worker);
+    return registeredCameraMissedWorkers.filter((worker) => {
       const line = findLine(lines, worker.currentLineId);
-      if (mismatchFilter !== "all" && kind !== mismatchFilter) return false;
       if (!normalized) return true;
       return `${workerSearchText(worker, line)} ${mismatchLabel(worker).toLowerCase()}`.includes(normalized);
     });
-  }, [lines, mismatchFilter, mismatchQuery, mismatchWorkers]);
+  }, [lines, mismatchFilter, mismatchQuery, registeredCameraMissedWorkers]);
+
+  const filteredRegisteredFingerprintMissedWorkers = useMemo(() => {
+    if (mismatchFilter !== "all" && mismatchFilter !== "fingerprint-missed") return [];
+    const normalized = normalizeSearch(mismatchQuery);
+
+    return registeredFingerprintMissedWorkers.filter((worker) => {
+      const line = findLine(lines, worker.currentLineId);
+      if (!normalized) return true;
+      return `${workerSearchText(worker, line)} ${mismatchLabel(worker).toLowerCase()}`.includes(normalized);
+    });
+  }, [lines, mismatchFilter, mismatchQuery, registeredFingerprintMissedWorkers]);
+
+  const filteredUnregisteredFaceEvents = useMemo(() => {
+    if (mismatchFilter !== "all" && mismatchFilter !== "unregistered-face") return [];
+    const normalized = normalizeSearch(mismatchQuery);
+
+    return unregisteredFaceEvents.filter((event) => {
+      if (!normalized) return true;
+      return faceEventSearchText(event).includes(normalized);
+    });
+  }, [mismatchFilter, mismatchQuery, unregisteredFaceEvents]);
 
   const employeeRows = useMemo(() => {
     const normalized = normalizeSearch(employeeQuery);
@@ -278,6 +368,7 @@ export function IeFullDashboardPage() {
         if (employeeFilter === "late") return worker.attendanceStatus === "Late";
         return worker.attendanceStatus === "Present";
       })
+      .filter((worker) => matchesAttendanceReportFilter(worker, employeeSignalFilter))
       .filter((worker) => {
         if (!normalized) return true;
         return workerSearchText(worker, findLine(lines, worker.currentLineId)).includes(normalized);
@@ -287,7 +378,7 @@ export function IeFullDashboardPage() {
         if (priorityDelta !== 0) return priorityDelta;
         return a.fullName.localeCompare(b.fullName);
       });
-  }, [employeeFilter, employeeQuery, lines, workers]);
+  }, [employeeFilter, employeeQuery, employeeSignalFilter, lines, workers]);
 
   const lineRiskRows = useMemo(
     () =>
@@ -301,16 +392,21 @@ export function IeFullDashboardPage() {
       }),
     [lineRows]
   );
+  const mismatchReviewCount = mismatchWorkers.length + unregisteredFaceEvents.length;
+  const filteredMismatchCount =
+    filteredRegisteredCameraMissedWorkers.length +
+    filteredRegisteredFingerprintMissedWorkers.length +
+    filteredUnregisteredFaceEvents.length;
 
   const urgentIssues = useMemo<Issue[]>(() => {
     const issues: Issue[] = [];
     const lowestLine = [...lineRows].sort((a, b) => a.attendanceRate - b.attendanceRate)[0];
 
-    if (mismatchWorkers.length > 0) {
+    if (mismatchReviewCount > 0) {
       issues.push({
         id: "employee-mismatches",
-        title: `${plural(mismatchWorkers.length, "employee")} mismatch`,
-        detail: mismatchWorkers.map((worker) => worker.fullName).slice(0, 3).join(", "),
+        title: `${plural(mismatchReviewCount, "mismatch", "mismatches")} to review`,
+        detail: `${registeredCameraMissedWorkers.length} camera missed, ${unregisteredFaceEvents.length} not registered, ${registeredFingerprintMissedWorkers.length} fingerprint missed`,
         tone: "danger",
       });
     }
@@ -366,12 +462,21 @@ export function IeFullDashboardPage() {
     attendanceOverview.lateWorkers,
     attendanceOverview.totalWorkers,
     lineRows,
-    mismatchWorkers,
+    mismatchReviewCount,
     redLines,
+    registeredCameraMissedWorkers.length,
+    registeredFingerprintMissedWorkers.length,
+    unregisteredFaceEvents.length,
     unmatchedAttendanceChecks,
   ]);
 
-  const visibleMismatchWorkers = filteredMismatchWorkers.slice(0, mismatchVisibleCount);
+  const visibleCameraMissedWorkers = filteredRegisteredCameraMissedWorkers.slice(0, mismatchVisibleCount);
+  const visibleUnregisteredFaceEvents = filteredUnregisteredFaceEvents.slice(0, mismatchVisibleCount);
+  const visibleFingerprintMissedWorkers = filteredRegisteredFingerprintMissedWorkers.slice(0, mismatchVisibleCount);
+  const hasMoreMismatchRows =
+    filteredRegisteredCameraMissedWorkers.length > visibleCameraMissedWorkers.length ||
+    filteredUnregisteredFaceEvents.length > visibleUnregisteredFaceEvents.length ||
+    filteredRegisteredFingerprintMissedWorkers.length > visibleFingerprintMissedWorkers.length;
   const visibleEmployeeRows = employeeRows.slice(0, employeeVisibleCount);
   const selectedWorker = selectedWorkerId ? workers.find((worker) => worker.id === selectedWorkerId) : undefined;
   const selectedWorkerLine = selectedWorker ? findLine(lines, selectedWorker.currentLineId) : undefined;
@@ -385,6 +490,39 @@ export function IeFullDashboardPage() {
         : [],
     [selectedLineId, workers]
   );
+
+  const renderRegisteredMismatchCard = (worker: WorkerProfile) => {
+    const line = findLine(lines, worker.currentLineId);
+    const fingerprintVerified = isVerified(worker.fingerprintVerificationStatus);
+    const faceVerified = isVerified(worker.faceVerificationStatus);
+
+    return (
+      <button
+        key={worker.id}
+        type="button"
+        className="ops-ceo-mismatch-card tone-danger"
+        onClick={() => setSelectedWorkerId(worker.id)}
+      >
+        <div className="ops-ceo-mismatch-top">
+          <div>
+            <h3>{worker.fullName}</h3>
+            <p>{worker.employeeId} - {line?.name || "No line"} - {worker.attendanceStatus}</p>
+          </div>
+          <span>{mismatchLabel(worker)}</span>
+        </div>
+        <div className="ops-ceo-system-row">
+          <span className={fingerprintVerified ? "is-yes" : "is-no"}>
+            <Fingerprint size={16} />
+            Fingerprint {yesNo(fingerprintVerified)}
+          </span>
+          <span className={faceVerified ? "is-yes" : "is-no"}>
+            <ScanFace size={16} />
+            Face {yesNo(faceVerified)}
+          </span>
+        </div>
+      </button>
+    );
+  };
 
   const handleRefresh = useCallback(async () => {
     await refresh();
@@ -412,7 +550,7 @@ export function IeFullDashboardPage() {
 
   useEffect(() => {
     setEmployeeVisibleCount(EMPLOYEE_PAGE_SIZE);
-  }, [employeeFilter, employeeQuery]);
+  }, [employeeFilter, employeeQuery, employeeSignalFilter]);
 
   useEffect(() => {
     setSelectedWorkerId(null);
@@ -577,12 +715,12 @@ export function IeFullDashboardPage() {
                 <div className="ops-ceo-kpi-value">{formatNumber(redLines.length + amberLines.length)}</div>
               </article>
 
-              <article className={`ops-ceo-kpi-card tone-${mismatchWorkers.length > 0 ? "danger" : "good"}`}>
+              <article className={`ops-ceo-kpi-card tone-${mismatchReviewCount > 0 ? "danger" : "good"}`}>
                 <div className="ops-ceo-kpi-label">
                   <Fingerprint size={19} />
                   Mismatch
                 </div>
-                <div className="ops-ceo-kpi-value">{formatNumber(mismatchWorkers.length)}</div>
+                <div className="ops-ceo-kpi-value">{formatNumber(mismatchReviewCount)}</div>
               </article>
             </div>
 
@@ -614,7 +752,7 @@ export function IeFullDashboardPage() {
                 <span>Fingerprint vs Face</span>
                 <h2>Attendance Mismatch</h2>
               </div>
-              <strong>{formatNumber(filteredMismatchWorkers.length)}</strong>
+              <strong>{formatNumber(filteredMismatchCount)}</strong>
             </div>
 
             <div className="ops-ceo-segmented" aria-label="Mismatch filter">
@@ -639,49 +777,102 @@ export function IeFullDashboardPage() {
               />
             </label>
 
-            <div className="ops-ceo-mismatch-list">
-              {visibleMismatchWorkers.length > 0 ? (
-                visibleMismatchWorkers.map((worker) => {
-                  const line = findLine(lines, worker.currentLineId);
-                  const fingerprintVerified = isVerified(worker.fingerprintVerificationStatus);
-                  const faceVerified = isVerified(worker.faceVerificationStatus);
-
-                  return (
-                    <button
-                      key={worker.id}
-                      type="button"
-                      className="ops-ceo-mismatch-card tone-danger"
-                      onClick={() => setSelectedWorkerId(worker.id)}
-                    >
-                      <div className="ops-ceo-mismatch-top">
-                        <div>
-                          <h3>{worker.fullName}</h3>
-                          <p>{worker.employeeId} - {line?.name || "No line"} - {worker.attendanceStatus}</p>
-                        </div>
-                        <span>{mismatchLabel(worker)}</span>
+            {filteredMismatchCount > 0 ? (
+              <div className="ops-ceo-mismatch-sections">
+                {mismatchFilter === "all" || mismatchFilter === "camera-missed" ? (
+                  <section className="ops-ceo-mismatch-group">
+                    <div className="ops-ceo-subsection-heading">
+                      <div>
+                        <h3>Registered employees not detected by face camera</h3>
+                        <p>Fingerprint was attended, but no matched face event was received.</p>
                       </div>
-                      <div className="ops-ceo-system-row">
-                        <span className={fingerprintVerified ? "is-yes" : "is-no"}>
-                          <Fingerprint size={16} />
-                          Fingerprint {yesNo(fingerprintVerified)}
-                        </span>
-                        <span className={faceVerified ? "is-yes" : "is-no"}>
-                          <ScanFace size={16} />
-                          Face {yesNo(faceVerified)}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })
-              ) : (
-                <article className="ops-ceo-empty-card">
-                  <CheckCircle2 size={22} />
-                  No fingerprint and face mismatches
-                </article>
-              )}
-            </div>
+                      <span>{formatNumber(filteredRegisteredCameraMissedWorkers.length)}</span>
+                    </div>
+                    <div className="ops-ceo-mismatch-list">
+                      {visibleCameraMissedWorkers.length > 0 ? (
+                        visibleCameraMissedWorkers.map(renderRegisteredMismatchCard)
+                      ) : (
+                        <article className="ops-ceo-empty-card">
+                          <CheckCircle2 size={22} />
+                          No camera-missed registered employees
+                        </article>
+                      )}
+                    </div>
+                  </section>
+                ) : null}
 
-            {filteredMismatchWorkers.length > visibleMismatchWorkers.length ? (
+                {mismatchFilter === "all" || mismatchFilter === "unregistered-face" ? (
+                  <section className="ops-ceo-mismatch-group">
+                    <div className="ops-ceo-subsection-heading">
+                      <div>
+                        <h3>Face events not registered in LineMatrix</h3>
+                        <p>The camera detected a person, but the event did not match an active employee.</p>
+                      </div>
+                      <span>{formatNumber(filteredUnregisteredFaceEvents.length)}</span>
+                    </div>
+                    <div className="ops-ceo-mismatch-list">
+                      {visibleUnregisteredFaceEvents.length > 0 ? (
+                        visibleUnregisteredFaceEvents.map((event) => (
+                          <article key={event.id} className="ops-ceo-mismatch-card tone-warning">
+                            <div className="ops-ceo-mismatch-top">
+                              <div>
+                                <h3>{faceEventPersonLabel(event)}</h3>
+                                <p>{formatEventDateTime(event.timestamp)} - {faceEventCameraLabel(event)}</p>
+                              </div>
+                              <span>Not registered</span>
+                            </div>
+                            <div className="ops-ceo-system-row">
+                              <span className="is-no">
+                                <ScanFace size={16} />
+                                Unknown face event
+                              </span>
+                              <span className="is-no">
+                                <UserX size={16} />
+                                No employee match
+                              </span>
+                            </div>
+                          </article>
+                        ))
+                      ) : (
+                        <article className="ops-ceo-empty-card">
+                          <CheckCircle2 size={22} />
+                          No unregistered face events
+                        </article>
+                      )}
+                    </div>
+                  </section>
+                ) : null}
+
+                {mismatchFilter === "all" || mismatchFilter === "fingerprint-missed" ? (
+                  <section className="ops-ceo-mismatch-group">
+                    <div className="ops-ceo-subsection-heading">
+                      <div>
+                        <h3>Registered employees without fingerprint detection</h3>
+                        <p>Face was detected, but no fingerprint attendance was received.</p>
+                      </div>
+                      <span>{formatNumber(filteredRegisteredFingerprintMissedWorkers.length)}</span>
+                    </div>
+                    <div className="ops-ceo-mismatch-list">
+                      {visibleFingerprintMissedWorkers.length > 0 ? (
+                        visibleFingerprintMissedWorkers.map(renderRegisteredMismatchCard)
+                      ) : (
+                        <article className="ops-ceo-empty-card">
+                          <CheckCircle2 size={22} />
+                          No fingerprint-missed registered employees
+                        </article>
+                      )}
+                    </div>
+                  </section>
+                ) : null}
+              </div>
+            ) : (
+              <article className="ops-ceo-empty-card">
+                <CheckCircle2 size={22} />
+                No fingerprint and face mismatches
+              </article>
+            )}
+
+            {hasMoreMismatchRows ? (
               <button
                 type="button"
                 className="ops-ceo-show-more"
@@ -715,6 +906,21 @@ export function IeFullDashboardPage() {
                 </button>
               ))}
             </div>
+
+            <select
+              className="ops-ceo-select"
+              value={employeeSignalFilter}
+              onChange={(event) =>
+                setEmployeeSignalFilter(event.target.value as AttendanceReportFilter)
+              }
+              aria-label="Face and fingerprint filter"
+            >
+              {ATTENDANCE_MISSING_SIGNAL_FILTERS.map((filter) => (
+                <option key={filter.value} value={filter.value}>
+                  {filter.label}
+                </option>
+              ))}
+            </select>
 
             <label className="ops-ceo-search">
               <Search size={18} />
