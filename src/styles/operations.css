@@ -3757,6 +3757,32 @@ textarea:focus {
   border-left-width: 6px;
 }
 
+.ops-ceo-action-card {
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  border-style: solid;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.ops-ceo-action-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
+}
+
+.ops-ceo-action-card:active {
+  transform: translateY(0);
+}
+
+.ops-ceo-action-card:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.34);
+  outline-offset: 3px;
+}
+
 .ops-ceo-kpi-card.is-primary {
   min-height: 164px;
   grid-column: 1 / -1;
@@ -4089,6 +4115,15 @@ textarea:focus {
   gap: 12px;
   padding: 14px;
   border-left-width: 6px;
+}
+
+.ops-ceo-issue-card.ops-ceo-action-card {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.ops-ceo-action-chevron {
+  color: currentColor;
+  opacity: 0.72;
 }
 
 .ops-ceo-empty-card {
@@ -5413,6 +5448,7 @@ button.ops-ceo-worker-card {
   .ops-ceo-mismatch-card,
   .ops-ceo-worker-card,
   .ops-ceo-issue-card,
+  .ops-ceo-action-card,
   .ops-modern-segmented button,
   .ops-icon-button {
     transition: none !important;

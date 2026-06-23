@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
   CalendarDays,
@@ -29,7 +29,7 @@ type Tone = "good" | "warning" | "danger" | "info" | "neutral";
 type TabId = "today" | "mismatch" | "employees" | "lines";
 type MismatchKind = "camera-missed" | "fingerprint-missed" | "none";
 type MismatchFilter = "all" | "camera-missed" | "unregistered-face" | "fingerprint-missed";
-type EmployeeFilter = "attention" | "absent" | "late" | "present";
+type EmployeeFilter = "attention" | "attended" | "absent" | "late" | "present";
 
 type Issue = {
   id: string;
@@ -54,6 +54,7 @@ const MISMATCH_FILTERS = [
 
 const EMPLOYEE_FILTERS = [
   { id: "attention", label: "Need attention" },
+  { id: "attended", label: "Attended" },
   { id: "absent", label: "Absent" },
   { id: "late", label: "Late" },
   { id: "present", label: "Present" },
@@ -252,6 +253,7 @@ export function IeFullDashboardPage() {
   const [employeeVisibleCount, setEmployeeVisibleCount] = useState(EMPLOYEE_PAGE_SIZE);
   const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null);
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  const detailPanelRef = useRef<HTMLElement | null>(null);
 
   const greeting = useMemo(() => getAntonioGreeting(currentTime), [currentTime]);
   const todayInputValue = useMemo(() => formatDateInput(new Date()), []);
@@ -363,6 +365,9 @@ export function IeFullDashboardPage() {
         const hasMismatch = mismatchKind(worker) !== "none";
         if (employeeFilter === "attention") {
           return hasMismatch || worker.attendanceStatus === "Absent" || worker.attendanceStatus === "Late";
+        }
+        if (employeeFilter === "attended") {
+          return worker.attendanceStatus === "Present" || worker.attendanceStatus === "Late";
         }
         if (employeeFilter === "absent") return worker.attendanceStatus === "Absent";
         if (employeeFilter === "late") return worker.attendanceStatus === "Late";
@@ -533,6 +538,63 @@ export function IeFullDashboardPage() {
     setSelectedAttendanceDate("");
   }, []);
 
+  const scrollToDetailPanel = useCallback(() => {
+    window.setTimeout(() => {
+      detailPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+  }, []);
+
+  const openEmployeeDetail = useCallback(
+    (filter: EmployeeFilter) => {
+      setEmployeeFilter(filter);
+      setEmployeeSignalFilter("all");
+      setEmployeeQuery("");
+      setEmployeeVisibleCount(EMPLOYEE_PAGE_SIZE);
+      setActiveTab("employees");
+      scrollToDetailPanel();
+    },
+    [scrollToDetailPanel]
+  );
+
+  const openMismatchDetail = useCallback(
+    (filter: MismatchFilter = "all") => {
+      setMismatchFilter(filter);
+      setMismatchQuery("");
+      setMismatchVisibleCount(MISMATCH_PAGE_SIZE);
+      setActiveTab("mismatch");
+      scrollToDetailPanel();
+    },
+    [scrollToDetailPanel]
+  );
+
+  const openLineRiskDetail = useCallback(() => {
+    setSelectedLineId(null);
+    setActiveTab("lines");
+    scrollToDetailPanel();
+  }, [scrollToDetailPanel]);
+
+  const openIssueDetail = useCallback(
+    (issueId: string) => {
+      if (issueId === "absent") {
+        openEmployeeDetail("absent");
+        return;
+      }
+
+      if (issueId === "late") {
+        openEmployeeDetail("late");
+        return;
+      }
+
+      if (issueId === "red-lines" || issueId === "lowest-line") {
+        openLineRiskDetail();
+        return;
+      }
+
+      openMismatchDetail("all");
+    },
+    [openEmployeeDetail, openLineRiskDetail, openMismatchDetail]
+  );
+
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date()), 60_000);
     return () => window.clearInterval(timer);
@@ -680,7 +742,12 @@ export function IeFullDashboardPage() {
             </div>
 
             <div className="ops-ceo-kpi-grid">
-              <article className="ops-ceo-kpi-card tone-good is-primary">
+              <button
+                type="button"
+                className="ops-ceo-kpi-card ops-ceo-action-card tone-good is-primary"
+                onClick={() => openEmployeeDetail("attended")}
+                aria-label="View attended employees"
+              >
                 <div className="ops-ceo-kpi-label">
                   <CheckCircle2 size={19} />
                   Present
@@ -689,51 +756,78 @@ export function IeFullDashboardPage() {
                   {formatNumber(overallAttended)}
                   <span>/ {formatNumber(attendanceOverview.totalWorkers)}</span>
                 </div>
-              </article>
+              </button>
 
-              <article className="ops-ceo-kpi-card tone-danger">
+              <button
+                type="button"
+                className="ops-ceo-kpi-card ops-ceo-action-card tone-danger"
+                onClick={() => openEmployeeDetail("absent")}
+                aria-label="View absent employees"
+              >
                 <div className="ops-ceo-kpi-label">
                   <UserX size={19} />
                   Absent
                 </div>
                 <div className="ops-ceo-kpi-value">{formatNumber(attendanceOverview.absentWorkers)}</div>
-              </article>
+              </button>
 
-              <article className="ops-ceo-kpi-card tone-warning">
+              <button
+                type="button"
+                className="ops-ceo-kpi-card ops-ceo-action-card tone-warning"
+                onClick={() => openEmployeeDetail("late")}
+                aria-label="View late employees"
+              >
                 <div className="ops-ceo-kpi-label">
                   <Clock3 size={19} />
                   Late
                 </div>
                 <div className="ops-ceo-kpi-value">{formatNumber(attendanceOverview.lateWorkers)}</div>
-              </article>
+              </button>
 
-              <article className={`ops-ceo-kpi-card tone-${redLines.length > 0 ? "danger" : amberLines.length > 0 ? "warning" : "good"}`}>
+              <button
+                type="button"
+                className={`ops-ceo-kpi-card ops-ceo-action-card tone-${redLines.length > 0 ? "danger" : amberLines.length > 0 ? "warning" : "good"}`}
+                onClick={openLineRiskDetail}
+                aria-label="View line risk details"
+              >
                 <div className="ops-ceo-kpi-label">
                   <ShieldAlert size={19} />
                   Line Risk
                 </div>
                 <div className="ops-ceo-kpi-value">{formatNumber(redLines.length + amberLines.length)}</div>
-              </article>
+              </button>
 
-              <article className={`ops-ceo-kpi-card tone-${mismatchReviewCount > 0 ? "danger" : "good"}`}>
+              <button
+                type="button"
+                className={`ops-ceo-kpi-card ops-ceo-action-card tone-${mismatchReviewCount > 0 ? "danger" : "good"}`}
+                onClick={() => openMismatchDetail("all")}
+                aria-label="View mismatch details"
+              >
                 <div className="ops-ceo-kpi-label">
                   <Fingerprint size={19} />
                   Mismatch
                 </div>
                 <div className="ops-ceo-kpi-value">{formatNumber(mismatchReviewCount)}</div>
-              </article>
+              </button>
             </div>
 
             <div className="ops-ceo-mini-list">
               {urgentIssues.length > 0 ? (
                 urgentIssues.map((issue) => (
-                  <article key={issue.id} className={`ops-ceo-issue-card tone-${issue.tone}`}>
+                  <button
+                    key={issue.id}
+                    type="button"
+                    className={`ops-ceo-issue-card ops-ceo-action-card tone-${issue.tone}`}
+                    onClick={() => openIssueDetail(issue.id)}
+                    aria-label={`Open details for ${issue.title}`}
+                  >
                     <AlertTriangle size={22} />
                     <div>
                       <h3>{issue.title}</h3>
                       <p>{issue.detail}</p>
                     </div>
-                  </article>
+                    <ChevronRight className="ops-ceo-action-chevron" size={20} />
+                  </button>
                 ))
               ) : (
                 <article className="ops-ceo-empty-card">
@@ -742,11 +836,11 @@ export function IeFullDashboardPage() {
                 </article>
               )}
             </div>
-          </section>
+        </section>
         ) : null}
 
         {activeTab === "mismatch" ? (
-          <section className="ops-ceo-section ops-ceo-tab-panel">
+          <section ref={detailPanelRef} className="ops-ceo-section ops-ceo-tab-panel">
             <div className="ops-ceo-section-heading">
               <div>
                 <span>Fingerprint vs Face</span>
@@ -885,7 +979,7 @@ export function IeFullDashboardPage() {
         ) : null}
 
         {activeTab === "employees" ? (
-          <section className="ops-ceo-section ops-ceo-tab-panel">
+          <section ref={detailPanelRef} className="ops-ceo-section ops-ceo-tab-panel">
             <div className="ops-ceo-section-heading">
               <div>
                 <span>Employees</span>
@@ -980,7 +1074,7 @@ export function IeFullDashboardPage() {
         ) : null}
 
         {activeTab === "lines" ? (
-          <section className="ops-ceo-section ops-ceo-tab-panel">
+          <section ref={detailPanelRef} className="ops-ceo-section ops-ceo-tab-panel">
             <div className="ops-ceo-section-heading">
               <div>
                 <span>Line Status</span>
@@ -990,7 +1084,7 @@ export function IeFullDashboardPage() {
             </div>
 
             <div className="ops-ceo-line-list">
-              {lineRiskRows.map((line) => {
+              {lineRows.map((line) => {
                 const tone = lineTone(line);
                 const came = line.presentWorkers + line.lateWorkers;
 
