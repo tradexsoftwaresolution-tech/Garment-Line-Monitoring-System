@@ -4,6 +4,7 @@ import type {
   AttendanceOverview,
   AttendanceSummary,
   AuditLogEntry,
+  DepartmentRecord,
   DepartmentAttendanceSummary,
   FaceEvent,
   FingerprintDeviceSummary,
@@ -25,9 +26,12 @@ import { isBackendConfigured } from "@/lib/backend/env";
 import type { AppSupabaseClient } from "../repositories/base-repository";
 import { logAuditEvent } from "../reconciliation/audit-service";
 import {
+  createEmployee,
   createEmployeeNote,
+  createDepartment,
   createOperationsAlertHistory,
   createProductionLineOutputEntry,
+  deactivateDepartment,
   fetchAttendanceReconciliationForEmployeeDate,
   fetchLatestFingerprintAttendanceForEmployee,
   fetchOperationsAlert,
@@ -36,8 +40,10 @@ import {
   listAnnouncements,
   listAttendanceReconciliationRows,
   listAuditLogs,
+  listDepartments,
   listEmployeeNotes,
   listEmployeeProfiles,
+  listEmployeeRoster,
   listEmployees,
   listFingerprintAttendanceRows,
   listZktecoFingerprintEventsForDate,
@@ -52,11 +58,18 @@ import {
   listProfiles,
   listTransferLogs,
   runAssignWorkerToLineRpc,
+  runReactivateEmployeeRpc,
+  runResignEmployeeRpc,
+  runSetEmployeeInactiveRpc,
+  runSyncInactiveAbsenceAlertsRpc,
   runSyncReconciliationAlertsRpc,
   runTransferWorkerLineRpc,
+  updateDepartment,
+  updateEmployee,
   updateOperationsAlert,
   updateAttendanceReconciliationForEmployeeDate,
   updateFingerprintAttendanceRowsForEmployeeDate,
+  upsertEmployeeProfile,
   updateProductionLine,
   updateProductionLineOutputEntry,
   updateSystemSettings,
@@ -65,6 +78,7 @@ import {
 type ReconciliationRow =
   Awaited<ReturnType<typeof listAttendanceReconciliationRows>>[number];
 type EmployeeRow = Awaited<ReturnType<typeof listEmployees>>[number];
+type DepartmentRow = Awaited<ReturnType<typeof listDepartments>>[number];
 type EmployeeProfileRow = Awaited<ReturnType<typeof listEmployeeProfiles>>[number];
 type EmployeeNoteRow = Awaited<ReturnType<typeof listEmployeeNotes>>[number];
 type FingerprintAttendanceRow =
@@ -79,6 +93,27 @@ type ProductionLineOutputEntryRow = Awaited<ReturnType<typeof listProductionLine
 
 const LATE_FACE_ARRIVAL_CUTOFF = "08:00:00";
 const ATTENDANCE_TIME_ZONE = "Asia/Colombo";
+
+export type WorkerHrDetailsInput = {
+  employeeCode: string;
+  epfNo?: string | null;
+  fullName: string;
+  departmentId?: string | null;
+  department: string;
+  roleTitle: string;
+  phone?: string | null;
+  shift?: "Shift A" | "Shift B";
+  hireDate?: string | null;
+  photoUrl?: string | null;
+  hrNotes?: string | null;
+};
+
+export type DepartmentInput = {
+  code?: string | null;
+  name: string;
+  description?: string | null;
+  isActive?: boolean;
+};
 
 function currentAttendanceDate() {
   const parts = new Intl.DateTimeFormat("en", {
@@ -98,6 +133,25 @@ function currentTimeText() {
     minute: "2-digit",
     second: "2-digit",
   });
+}
+
+function cleanText(value: string | null | undefined) {
+  const trimmed = String(value || "").trim();
+  return trimmed || null;
+}
+
+function normalizeDepartmentCode(value: string | null | undefined, fallbackName?: string | null) {
+  const source = cleanText(value) || cleanText(fallbackName) || "";
+  const normalized = source
+    .replace(/[^A-Za-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toUpperCase();
+  return normalized || "DEPARTMENT";
+}
+
+function normalizeEmployeeCode(value: string | null | undefined) {
+  const normalized = cleanText(value)?.replace(/\s+/g, "");
+  return normalized || "";
 }
 
 function withManualAttendanceOverrideFlag(value: Json | null): Json {
@@ -1114,10 +1168,21 @@ export async function getOperationsSnapshot(
     includeSystemSettings?: boolean;
     includeProfileDirectory?: boolean;
     syncReconciliationAlerts?: boolean;
+    syncEmployeeStatusAlerts?: boolean;
   } = {}
 ): Promise<OperationsSnapshot> {
   if (options.syncReconciliationAlerts) {
     await runSyncReconciliationAlertsRpc(client);
+  }
+  if (options.syncEmployeeStatusAlerts) {
+    try {
+      await runSyncInactiveAbsenceAlertsRpc(client);
+    } catch (syncError) {
+      console.warn(
+        "Employee inactive absence alert sync skipped:",
+        syncError instanceof Error ? syncError.message : syncError
+      );
+    }
   }
 
   const sinceDate = new Date(Date.now() - 1000 * 60 * 60 * 24 * 60)
@@ -1125,7 +1190,9 @@ export async function getOperationsSnapshot(
     .slice(0, 10);
 
   const [
+    departments,
     employees,
+    employeeRoster,
     employeeProfiles,
     employeeNotes,
     lines,
@@ -1143,7 +1210,21 @@ export async function getOperationsSnapshot(
     auditLogs,
     profiles,
   ] = await Promise.all([
+    listDepartments(client).catch((departmentError) => {
+      console.warn(
+        "Department master load skipped:",
+        departmentError instanceof Error ? departmentError.message : departmentError
+      );
+      return [] as DepartmentRow[];
+    }),
     listEmployees(client),
+    listEmployeeRoster(client).catch((rosterError) => {
+      console.warn(
+        "Full employee roster load skipped:",
+        rosterError instanceof Error ? rosterError.message : rosterError
+      );
+      return [];
+    }),
     listEmployeeProfiles(client),
     options.includeEmployeeNotes ? listEmployeeNotes(client) : Promise.resolve([]),
     listProductionLines(client),
@@ -1284,11 +1365,15 @@ export async function getOperationsSnapshot(
     zktecoFingerprintEvents,
     fingerprintDeviceAttendanceDate
   );
+  const departmentsById = new Map(departments.map((department) => [department.id, department]));
 
-  const mappedWorkers = employees.map<WorkerProfile>((employee) => {
+  const mapEmployeeRowToWorker = (employee: EmployeeRow): WorkerProfile => {
     const profile = employeeProfilesByEmployeeId.get(employee.id);
     const notes = employeeNotesByEmployeeId.get(employee.id) || [];
     const latestRow = latestRowByEmployeeCode.get(employee.employee_code);
+    const masterDepartment = employee.department_id
+      ? departmentsById.get(employee.department_id)
+      : undefined;
     const effectiveAttendanceDate = latestAttendanceDate;
     const sameDateFingerprintRow = fingerprintRowByEmployeeCodeAndDate.get(
       `${employee.employee_code}:${effectiveAttendanceDate}`
@@ -1309,16 +1394,19 @@ export async function getOperationsSnapshot(
     return {
       id: employee.id,
       employeeId: employee.employee_code,
+      epfNo: employee.epf_no || undefined,
       fullName:
         employee.display_name ||
         latestRow?.employee_name ||
         latestFingerprintRow?.employee_name ||
         employee.employee_code,
       photoUrl: profile?.photo_url || undefined,
+      departmentId: employee.department_id || masterDepartment?.id || undefined,
       department:
+        masterDepartment?.name ||
+        employee.department_name ||
         latestRow?.department_name ||
         latestFingerprintRow?.department_name ||
-        employee.department_name ||
         "Unassigned",
       roleTitle:
         latestRow?.designation ||
@@ -1347,8 +1435,34 @@ export async function getOperationsSnapshot(
         .map((note) => note.note),
       phone: profile?.phone || "Not set",
       joinDate: profile?.join_date || "",
+      employmentStatus: employee.employment_status,
+      hireDate: employee.hire_date || profile?.join_date || undefined,
+      resignedAt: employee.resigned_at || undefined,
+      resignationReason: employee.resignation_reason || undefined,
+      hrNotes: employee.hr_notes || undefined,
     };
+  };
+
+  const mappedWorkers = employees.map(mapEmployeeRowToWorker);
+  const mappedEmployeeRoster = employeeRoster.map(mapEmployeeRowToWorker);
+  const activeEmployeeCountByDepartmentId = new Map<string, number>();
+  mappedEmployeeRoster.forEach((worker) => {
+    if (!worker.departmentId || worker.employmentStatus !== "active") {
+      return;
+    }
+    activeEmployeeCountByDepartmentId.set(
+      worker.departmentId,
+      (activeEmployeeCountByDepartmentId.get(worker.departmentId) || 0) + 1
+    );
   });
+  const mappedDepartments = departments.map<DepartmentRecord>((department) => ({
+    id: department.id,
+    code: department.code || normalizeDepartmentCode(department.name),
+    name: department.name,
+    description: department.description || undefined,
+    isActive: department.is_active ?? true,
+    activeEmployees: activeEmployeeCountByDepartmentId.get(department.id) || 0,
+  }));
 
   const lineAttendanceById = new Map<
     string,
@@ -1636,7 +1750,9 @@ export async function getOperationsSnapshot(
   return {
     attendanceOverview,
     departmentAttendance,
+    departments: mappedDepartments,
     workers: mappedWorkers,
+    employeeRoster: mappedEmployeeRoster,
     lines: mappedLines,
     faceEvents,
     fingerprintDeviceSummary,
@@ -1698,6 +1814,326 @@ export async function getOperationsSnapshot(
         }
       : DEFAULT_SETTINGS,
     reportSeries,
+  };
+}
+
+export async function createDepartmentRecord(
+  client: AppSupabaseClient,
+  args: DepartmentInput
+): Promise<OperationsActionResult> {
+  const name = cleanText(args.name);
+
+  if (!name) {
+    return { ok: false, message: "Department name is required." };
+  }
+
+  const department = await createDepartment(client, {
+    code: normalizeDepartmentCode(args.code, name),
+    name,
+    description: cleanText(args.description),
+    is_active: args.isActive ?? true,
+  });
+
+  await logAuditEvent(client, {
+    actionType: "department_created_by_hr",
+    entityType: "departments",
+    entityId: department.id,
+    newValue: {
+      code: department.code,
+      name: department.name,
+      description: department.description,
+      is_active: department.is_active,
+    },
+  });
+
+  return {
+    ok: true,
+    message: `${department.name} department created.`,
+  };
+}
+
+export async function updateDepartmentRecord(
+  client: AppSupabaseClient,
+  args: DepartmentInput & { departmentId: string }
+): Promise<OperationsActionResult> {
+  const name = cleanText(args.name);
+
+  if (!name) {
+    return { ok: false, message: "Department name is required." };
+  }
+
+  const department = await updateDepartment(client, args.departmentId, {
+    code: normalizeDepartmentCode(args.code, name),
+    name,
+    description: cleanText(args.description),
+    is_active: args.isActive ?? true,
+    updated_at: new Date().toISOString(),
+  });
+
+  await logAuditEvent(client, {
+    actionType: "department_updated_by_hr",
+    entityType: "departments",
+    entityId: department.id,
+    newValue: {
+      code: department.code,
+      name: department.name,
+      description: department.description,
+      is_active: department.is_active,
+    },
+  });
+
+  return {
+    ok: true,
+    message: `${department.name} department updated.`,
+  };
+}
+
+export async function deactivateDepartmentRecord(
+  client: AppSupabaseClient,
+  args: { departmentId: string }
+): Promise<OperationsActionResult> {
+  const department = await deactivateDepartment(client, args.departmentId);
+
+  await logAuditEvent(client, {
+    actionType: "department_deactivated_by_hr",
+    entityType: "departments",
+    entityId: department.id,
+    newValue: {
+      code: department.code,
+      name: department.name,
+      is_active: department.is_active,
+    },
+  });
+
+  return {
+    ok: true,
+    message: `${department.name} department deactivated.`,
+  };
+}
+
+export async function createWorkerProfile(
+  client: AppSupabaseClient,
+  args: WorkerHrDetailsInput
+): Promise<OperationsActionResult> {
+  const employeeCode = normalizeEmployeeCode(args.employeeCode);
+  const fullName = cleanText(args.fullName);
+  const departmentId = cleanText(args.departmentId);
+  const department = cleanText(args.department) || "Unassigned";
+  const roleTitle = cleanText(args.roleTitle) || "Worker";
+  const hireDate = cleanText(args.hireDate);
+
+  if (!employeeCode) {
+    return { ok: false, message: "Employee number is required." };
+  }
+
+  if (!fullName) {
+    return { ok: false, message: "Employee full name is required." };
+  }
+
+  const employee = await createEmployee(client, {
+    employee_code: employeeCode,
+    epf_no: cleanText(args.epfNo),
+    display_name: fullName,
+    designation: roleTitle,
+    department_id: departmentId,
+    department_name: department,
+    source_priority_name: "HR manual roster",
+    employment_status: "active",
+    hire_date: hireDate,
+    hr_notes: cleanText(args.hrNotes),
+    is_active: true,
+  });
+
+  await upsertEmployeeProfile(client, {
+    employee_id: employee.id,
+    shift_name: args.shift || "Shift A",
+    phone: cleanText(args.phone),
+    photo_url: cleanText(args.photoUrl),
+    join_date: hireDate,
+    skills: [],
+  });
+
+  if (cleanText(args.hrNotes)) {
+    await createEmployeeNote(client, {
+      employee_id: employee.id,
+      note_type: "note",
+      note: `HR onboarding note: ${cleanText(args.hrNotes)}`,
+    });
+  }
+
+  await logAuditEvent(client, {
+    actionType: "employee_created_by_hr",
+    entityType: "employees",
+    entityId: employee.id,
+    newValue: {
+      employee_code: employee.employee_code,
+      display_name: employee.display_name,
+      department_name: employee.department_name,
+      department_id: employee.department_id,
+      designation: employee.designation,
+      hire_date: employee.hire_date,
+    },
+  });
+
+  return {
+    ok: true,
+    message: `${employee.display_name || employee.employee_code} added to the active employee roster.`,
+  };
+}
+
+export async function updateWorkerHrDetails(
+  client: AppSupabaseClient,
+  args: WorkerHrDetailsInput & { employeeId: string }
+): Promise<OperationsActionResult> {
+  const employeeCode = normalizeEmployeeCode(args.employeeCode);
+  const fullName = cleanText(args.fullName);
+  const departmentId = cleanText(args.departmentId);
+  const department = cleanText(args.department) || "Unassigned";
+  const roleTitle = cleanText(args.roleTitle) || "Worker";
+  const hireDate = cleanText(args.hireDate);
+
+  if (!employeeCode) {
+    return { ok: false, message: "Employee number is required." };
+  }
+
+  if (!fullName) {
+    return { ok: false, message: "Employee full name is required." };
+  }
+
+  const updated = await updateEmployee(client, args.employeeId, {
+    employee_code: employeeCode,
+    epf_no: cleanText(args.epfNo),
+    display_name: fullName,
+    designation: roleTitle,
+    department_id: departmentId,
+    department_name: department,
+    hire_date: hireDate,
+    hr_notes: cleanText(args.hrNotes),
+    updated_at: new Date().toISOString(),
+  });
+
+  await upsertEmployeeProfile(client, {
+    employee_id: args.employeeId,
+    shift_name: args.shift || "Shift A",
+    phone: cleanText(args.phone),
+    photo_url: cleanText(args.photoUrl),
+    join_date: hireDate,
+  });
+
+  await logAuditEvent(client, {
+    actionType: "employee_hr_details_updated",
+    entityType: "employees",
+    entityId: args.employeeId,
+    newValue: {
+      employee_code: updated.employee_code,
+      display_name: updated.display_name,
+      department_name: updated.department_name,
+      department_id: updated.department_id,
+      designation: updated.designation,
+      hire_date: updated.hire_date,
+      hr_notes: updated.hr_notes,
+    },
+  });
+
+  return {
+    ok: true,
+    message: `${updated.display_name || updated.employee_code} HR details updated.`,
+  };
+}
+
+export async function resignWorkerProfile(
+  client: AppSupabaseClient,
+  args: {
+    employeeId: string;
+    resignedAt: string;
+    reason: string;
+    hrNotes?: string | null;
+  }
+): Promise<OperationsActionResult> {
+  const resignedAt = cleanText(args.resignedAt);
+  const reason = cleanText(args.reason);
+
+  if (!resignedAt) {
+    return { ok: false, message: "Resignation date is required." };
+  }
+
+  if (!reason) {
+    return { ok: false, message: "Resignation reason is required." };
+  }
+
+  const result = await runResignEmployeeRpc(client, {
+    employeeId: args.employeeId,
+    resignedAt,
+    reason,
+    hrNotes: cleanText(args.hrNotes),
+  });
+
+  await createEmployeeNote(client, {
+    employee_id: args.employeeId,
+    note_type: "flag",
+    note: `Resigned on ${resignedAt}: ${reason}`,
+  });
+
+  const closedAssignments = result.closed_assignments || 0;
+
+  return {
+    ok: true,
+    message:
+      closedAssignments > 0
+        ? `Employee resigned and ${closedAssignments} active line assignment(s) were closed.`
+      : "Employee resigned and removed from the active roster.",
+  };
+}
+
+export async function updateWorkerEmploymentStatus(
+  client: AppSupabaseClient,
+  args: {
+    employeeId: string;
+    status: "active" | "inactive";
+    reason?: string | null;
+    hrNotes?: string | null;
+  }
+): Promise<OperationsActionResult> {
+  const reason = cleanText(args.reason);
+  const hrNotes = cleanText(args.hrNotes);
+
+  if (args.status === "inactive") {
+    const result = await runSetEmployeeInactiveRpc(client, {
+      employeeId: args.employeeId,
+      reason,
+      hrNotes,
+    });
+
+    await createEmployeeNote(client, {
+      employee_id: args.employeeId,
+      note_type: "flag",
+      note: reason ? `Marked inactive: ${reason}` : "Marked inactive by HR.",
+    });
+
+    const closedAssignments = result.closed_assignments || 0;
+    return {
+      ok: true,
+      message:
+        closedAssignments > 0
+          ? `Employee marked inactive and ${closedAssignments} active line assignment(s) were closed.`
+          : "Employee marked inactive and removed from the active roster.",
+    };
+  }
+
+  await runReactivateEmployeeRpc(client, {
+    employeeId: args.employeeId,
+    hrNotes,
+  });
+
+  await createEmployeeNote(client, {
+    employee_id: args.employeeId,
+    note_type: "note",
+    note: reason ? `Employee reactivated by HR: ${reason}` : "Employee reactivated by HR.",
+  });
+
+  return {
+    ok: true,
+    message: "Employee reactivated and returned to the active roster.",
   };
 }
 

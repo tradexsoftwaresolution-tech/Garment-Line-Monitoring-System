@@ -153,6 +153,6 @@ export function getPublicExclusiveDashboardSnapshotFromBackend(attendanceDate?: 
   return backendPublicJsonRequest<OperationsSnapshot>(
     "/api/public/exclusive-dashboard",
     {},
-    { attendanceDate: attendanceDate || null }
+    { attendanceDate: attendanceDate || null, t: String(Date.now()) }
   );
 }

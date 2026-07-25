@@ -7,6 +7,7 @@ export type AppRouteKey =
   | "ieAnalytics"
   | "imports"
   | "workers"
+  | "employeeManagement"
   | "workerProfile"
   | "leaveManagement"
   | "employeePortal"
@@ -56,6 +57,7 @@ export const routeTitles: Record<AppRouteKey, string> = {
   ieAnalytics: "IE Analytics",
   imports: "Import Center",
   workers: "Workers",
+  employeeManagement: "Employee Management",
   workerProfile: "Worker Profile",
   leaveManagement: "Leave Management",
   employeePortal: "Employee Portal",
@@ -81,6 +83,7 @@ export const routePermissions: Record<AppRouteKey, UserRole[]> = {
   ieAnalytics: ["admin", "ie"],
   imports: ["admin", "hr"],
   workers: ["admin", "supervisor", "hr", "ie"],
+  employeeManagement: ["admin", "hr"],
   workerProfile: ["admin", "supervisor", "hr", "ie"],
   leaveManagement: ["admin", "hr"],
   employeePortal: ["admin", "supervisor", "hr", "ie", "viewer"],

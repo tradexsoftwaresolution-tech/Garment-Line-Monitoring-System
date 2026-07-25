@@ -13,6 +13,7 @@ import {
   Menu,
   ScanFace,
   Shield,
+  UserCog,
   Users,
   X,
 } from "lucide-react";
@@ -67,6 +68,13 @@ const navSections: Array<{ label: string; items: NavItem[] }> = [
         label: "Workers",
         description: "Profiles & attendance",
         icon: Users,
+      },
+      {
+        path: "/employee-management",
+        routeKey: "employeeManagement",
+        label: "Employee Management",
+        description: "HR roster",
+        icon: UserCog,
       },
       {
         path: "/leave-management",

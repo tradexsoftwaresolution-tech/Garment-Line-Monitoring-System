@@ -61,6 +61,7 @@ export async function backendPublicJsonRequest<T>(
 ): Promise<T> {
   const response = await fetch(buildUrl(path, params), {
     ...options,
+    cache: "no-store",
     headers: {
       ...(options.body ? { "Content-Type": "application/json" } : {}),
       ...(options.headers || {}),

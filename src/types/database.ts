@@ -29,7 +29,12 @@ type ProfileRow = {
 
 type DepartmentRow = {
   id: string;
+  code: string | null;
   name: string;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 };
 
 type EmployeeRow = {
@@ -38,8 +43,14 @@ type EmployeeRow = {
   epf_no: string | null;
   display_name: string | null;
   designation: string | null;
+  department_id: string | null;
   department_name: string | null;
   source_priority_name: string | null;
+  employment_status: "active" | "resigned" | "inactive";
+  hire_date: string | null;
+  resigned_at: string | null;
+  resignation_reason: string | null;
+  hr_notes: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -530,7 +541,12 @@ export interface Database {
         DepartmentRow,
         {
           id?: string;
+          code?: string | null;
           name: string;
+          description?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
         }
       >;
       employees: GenericTable<
@@ -541,8 +557,14 @@ export interface Database {
           epf_no?: string | null;
           display_name?: string | null;
           designation?: string | null;
+          department_id?: string | null;
           department_name?: string | null;
           source_priority_name?: string | null;
+          employment_status?: EmployeeRow["employment_status"];
+          hire_date?: string | null;
+          resigned_at?: string | null;
+          resignation_reason?: string | null;
+          hr_notes?: string | null;
           is_active?: boolean;
           created_at?: string;
           updated_at?: string;
@@ -1078,6 +1100,25 @@ export interface Database {
         Returns: Json;
       };
       rpc_sync_reconciliation_alerts: {
+        Args: Record<PropertyKey, never>;
+        Returns: Json;
+      };
+      rpc_reactivate_employee: {
+        Args: {
+          p_employee_id: string;
+          p_hr_notes?: string | null;
+        };
+        Returns: Json;
+      };
+      rpc_set_employee_inactive: {
+        Args: {
+          p_employee_id: string;
+          p_reason?: string | null;
+          p_hr_notes?: string | null;
+        };
+        Returns: Json;
+      };
+      rpc_sync_three_day_absence_inactive_alerts: {
         Args: Record<PropertyKey, never>;
         Returns: Json;
       };

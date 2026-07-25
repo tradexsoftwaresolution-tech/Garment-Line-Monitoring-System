@@ -15,13 +15,22 @@ import {
   addWorkerNote,
   assignAlert,
   assignWorkerToLine,
+  createDepartmentRecord,
+  createWorkerProfile,
+  deactivateDepartmentRecord,
   getOperationsSnapshot,
   markWorkerException,
+  resignWorkerProfile,
   transferWorkerBetweenLines,
+  updateDepartmentRecord,
+  updateWorkerEmploymentStatus,
+  updateWorkerHrDetails,
   updateProductionLineStyle,
   updateAlertStatus,
   updateWorkerAttendanceStatus,
   updateOperationalSetting,
+  type DepartmentInput,
+  type WorkerHrDetailsInput,
 } from "@/server/operations/operations-service";
 import type { OperationsActionResult, OperationsSnapshot } from "@/types/operations";
 import type {
@@ -122,6 +131,32 @@ type OperationsContextValue = OperationsSnapshot & {
     status: "Present" | "Absent";
     actor: string;
   }) => Promise<OperationsActionResult>;
+  createWorker: (args: WorkerHrDetailsInput & { actor: string }) => Promise<OperationsActionResult>;
+  createDepartment: (args: DepartmentInput & { actor: string }) => Promise<OperationsActionResult>;
+  updateDepartment: (
+    args: DepartmentInput & { departmentId: string; actor: string }
+  ) => Promise<OperationsActionResult>;
+  deleteDepartment: (args: {
+    departmentId: string;
+    actor: string;
+  }) => Promise<OperationsActionResult>;
+  updateWorkerHrDetails: (
+    args: WorkerHrDetailsInput & { workerId: string; actor: string }
+  ) => Promise<OperationsActionResult>;
+  resignWorker: (args: {
+    workerId: string;
+    resignedAt: string;
+    reason: string;
+    hrNotes?: string | null;
+    actor: string;
+  }) => Promise<OperationsActionResult>;
+  updateWorkerEmploymentStatus: (args: {
+    workerId: string;
+    status: "active" | "inactive";
+    reason?: string | null;
+    hrNotes?: string | null;
+    actor: string;
+  }) => Promise<OperationsActionResult>;
 };
 
 const EMPTY_SNAPSHOT: OperationsSnapshot = {
@@ -134,7 +169,9 @@ const EMPTY_SNAPSHOT: OperationsSnapshot = {
     absentWorkers: 0,
   },
   departmentAttendance: [],
+  departments: [],
   workers: [],
+  employeeRoster: [],
   lines: [],
   faceEvents: [],
   fingerprintDeviceSummary: {
@@ -201,6 +238,7 @@ const LIVE_REFRESH_TABLES = [
   "employee_profiles",
   "employee_notes",
   "employees",
+  "departments",
   "transfer_logs",
 ];
 
@@ -426,6 +464,7 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
         includeSystemSettings: currentUser.role === "admin",
         includeProfileDirectory: currentUser.role !== "viewer",
         syncReconciliationAlerts: ["admin", "hr", "supervisor"].includes(currentUser.role),
+        syncEmployeeStatusAlerts: ["admin", "hr"].includes(currentUser.role),
       });
       setSnapshot(nextSnapshot);
     } catch (nextError) {
@@ -656,6 +695,48 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
             employeeCode,
             status,
             actorUserId: currentUser.id,
+          })
+        ),
+      createWorker: async ({ actor, ...details }) =>
+        withClient((client) => createWorkerProfile(client, details)),
+      createDepartment: async ({ actor, ...details }) =>
+        withClient((client) => createDepartmentRecord(client, details)),
+      updateDepartment: async ({ departmentId, actor, ...details }) =>
+        withClient((client) =>
+          updateDepartmentRecord(client, {
+            departmentId,
+            ...details,
+          })
+        ),
+      deleteDepartment: async ({ departmentId }) =>
+        withClient((client) =>
+          deactivateDepartmentRecord(client, {
+            departmentId,
+          })
+        ),
+      updateWorkerHrDetails: async ({ workerId, actor, ...details }) =>
+        withClient((client) =>
+          updateWorkerHrDetails(client, {
+            employeeId: workerId,
+            ...details,
+          })
+        ),
+      resignWorker: async ({ workerId, resignedAt, reason, hrNotes }) =>
+        withClient((client) =>
+          resignWorkerProfile(client, {
+            employeeId: workerId,
+            resignedAt,
+            reason,
+            hrNotes,
+          })
+        ),
+      updateWorkerEmploymentStatus: async ({ workerId, status, reason, hrNotes }) =>
+        withClient((client) =>
+          updateWorkerEmploymentStatus(client, {
+            employeeId: workerId,
+            status,
+            reason,
+            hrNotes,
           })
         ),
     }),

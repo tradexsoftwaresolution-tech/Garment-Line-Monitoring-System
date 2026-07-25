@@ -49,6 +49,15 @@ function leaveStatusTone(status: LeaveRequestStatus) {
   return "danger";
 }
 
+function formatOptionalDate(value?: string | null) {
+  if (!value) return "Not set";
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(`${value}T00:00:00`));
+}
+
 export function WorkerProfilePage() {
   const { workerId } = useParams();
   const { currentUser, canDo } = useAuth();
@@ -345,6 +354,29 @@ export function WorkerProfilePage() {
               <div className="ops-key-value-value">{worker.shift}</div>
             </div>
             <div className="ops-key-value">
+              <div className="ops-key-value-label">Employment Status</div>
+              <div className="ops-key-value-value">
+                <StatusBadge
+                  label={worker.employmentStatus === "resigned" ? "Resigned" : worker.employmentStatus === "inactive" ? "Inactive" : "Active"}
+                  tone={worker.employmentStatus === "resigned" || worker.employmentStatus === "inactive" ? "danger" : "success"}
+                />
+              </div>
+            </div>
+            <div className="ops-key-value">
+              <div className="ops-key-value-label">EPF No.</div>
+              <div className="ops-key-value-value">{worker.epfNo || "Not set"}</div>
+            </div>
+            <div className="ops-key-value">
+              <div className="ops-key-value-label">Hire Date</div>
+              <div className="ops-key-value-value">{formatOptionalDate(worker.hireDate)}</div>
+            </div>
+            {worker.employmentStatus === "resigned" ? (
+              <div className="ops-key-value">
+                <div className="ops-key-value-label">Resigned Date</div>
+                <div className="ops-key-value-value">{formatOptionalDate(worker.resignedAt)}</div>
+              </div>
+            ) : null}
+            <div className="ops-key-value">
               <div className="ops-key-value-label">Attendance Status</div>
               <div className="ops-key-value-value">
                 <StatusBadge label={displayedAttendanceStatus} tone={attendanceTone(displayedAttendanceStatus)} />
@@ -377,6 +409,26 @@ export function WorkerProfilePage() {
               </div>
             </div>
           </div>
+
+          {worker.hrNotes || worker.resignationReason ? (
+            <>
+              <div className="ops-card-divider" />
+              <div className="ops-meta-grid">
+                {worker.resignationReason ? (
+                  <div className="ops-key-value">
+                    <div className="ops-key-value-label">Resignation Reason</div>
+                    <div className="ops-key-value-value">{worker.resignationReason}</div>
+                  </div>
+                ) : null}
+                {worker.hrNotes ? (
+                  <div className="ops-key-value">
+                    <div className="ops-key-value-label">HR Notes</div>
+                    <div className="ops-key-value-value">{worker.hrNotes}</div>
+                  </div>
+                ) : null}
+              </div>
+            </>
+          ) : null}
 
           <div className="ops-card-divider" />
 

@@ -57,10 +57,10 @@ function faceEventTime(event?: HikvisionRecognitionEvent | FaceEvent) {
 
 function faceEventMatched(event: HikvisionRecognitionEvent | FaceEvent) {
   if (isHikvisionRecognitionEvent(event)) {
-    return event.matchStatus === "matched";
+    return Boolean(event.matchedEmployeeId) || event.matchStatus === "matched";
   }
 
-  return event.matchStatus === "matched" || event.outcome === "matched";
+  return Boolean(event.workerId) || event.matchStatus === "matched" || event.outcome === "matched";
 }
 
 function faceEventLabel(event: HikvisionRecognitionEvent | FaceEvent) {

@@ -40,11 +40,22 @@ export interface AppUser {
   initials: string;
 }
 
+export interface DepartmentRecord {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
+  activeEmployees: number;
+}
+
 export interface WorkerProfile {
   id: string;
   employeeId: string;
+  epfNo?: string;
   fullName: string;
   photoUrl?: string;
+  departmentId?: string;
   department: string;
   roleTitle: string;
   currentLineId?: string;
@@ -66,6 +77,11 @@ export interface WorkerProfile {
   supervisorRemarks: string[];
   phone: string;
   joinDate: string;
+  employmentStatus?: "active" | "resigned" | "inactive";
+  hireDate?: string;
+  resignedAt?: string;
+  resignationReason?: string;
+  hrNotes?: string;
 }
 
 export interface ProductionLineRecord {

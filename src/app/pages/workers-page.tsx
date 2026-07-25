@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { Clock3, Download, Fingerprint, ScanFace, UserX, Users } from "lucide-react";
+import { Clock3, Download, Fingerprint, ScanFace, UserMinus, Users } from "lucide-react";
 import {
   ATTENDANCE_REPORT_FILTERS,
   type AttendanceReportFilter,
@@ -119,7 +119,7 @@ export function WorkersPage() {
           label="Absent Today"
           value={`${absentWorkers}`}
           meta="Workers currently marked absent."
-          icon={UserX}
+          icon={UserMinus}
           accent="var(--ops-danger)"
           soft="var(--ops-danger-soft)"
         />

@@ -79,6 +79,12 @@ public class PublicDashboardService {
         fingerprintRows.stream()
             .filter(row -> hasText(text(row, "employee_code")))
             .collect(Collectors.toMap(row -> text(row, "employee_code"), row -> row, (left, right) -> left));
+    Map<String, JsonNode> employeesByIdentifier = new LinkedHashMap<>();
+    employees.forEach(
+        employee -> {
+          putEmployeeIdentifier(employeesByIdentifier, text(employee, "employee_code"), employee);
+          putEmployeeIdentifier(employeesByIdentifier, text(employee, "epf_no"), employee);
+        });
     Map<String, JsonNode> activeAssignmentsByEmployeeId = new LinkedHashMap<>();
     lineAssignments.forEach(
         assignment -> {
@@ -108,7 +114,7 @@ public class PublicDashboardService {
     snapshot.put("departmentAttendance", departments);
     snapshot.put("workers", workers);
     snapshot.put("lines", lines);
-    snapshot.put("faceEvents", faceEvents(hikvisionEvents));
+    snapshot.put("faceEvents", faceEvents(hikvisionEvents, employeesByIdentifier));
     snapshot.put("fingerprintDeviceSummary", fingerprintDeviceSummary(zktecoEvents, attendanceDateText));
     snapshot.put("fingerprintEvents", fingerprintEvents(zktecoEvents));
     snapshot.put("validationRecords", List.of());
@@ -291,7 +297,11 @@ public class PublicDashboardService {
     if (row == null) {
       return "Pending";
     }
-    return integer(row, "face_event_count") > 0 ? "Verified" : "Missing";
+    return integer(row, "face_event_count") > 0
+            || hasText(text(row, "face_first_seen"))
+            || hasText(text(row, "face_last_seen"))
+        ? "Verified"
+        : "Missing";
   }
 
   private String fingerprintVerification(JsonNode fingerprintRow, JsonNode reconciliationRow) {
@@ -495,23 +505,30 @@ public class PublicDashboardService {
     return summary;
   }
 
-  private List<Map<String, Object>> faceEvents(List<JsonNode> events) {
+  private List<Map<String, Object>> faceEvents(List<JsonNode> events, Map<String, JsonNode> employeesByIdentifier) {
     return events.stream()
         .map(
             event -> {
+              String eventEmployeeCode =
+                  firstNonBlank(text(event, "employee_code"), text(event, "device_person_name"));
+              JsonNode matchedEmployee = employeesByIdentifier.get(normalizePin(eventEmployeeCode));
+              boolean matched =
+                  matchedEmployee != null
+                      || "matched".equals(text(event, "match_status"))
+                      || hasText(text(event, "employee_id"));
               String matchStatus =
-                  firstNonBlank(
-                      text(event, "match_status"),
-                      hasText(text(event, "employee_id")) || hasText(text(event, "employee_code"))
-                          ? "matched"
-                          : "unmatched");
+                  matched ? "matched" : firstNonBlank(text(event, "match_status"), "unmatched");
               Map<String, Object> value = new LinkedHashMap<>();
               value.put("id", "hikvision-" + firstNonBlank(text(event, "id"), text(event, "camera_event_id"), text(event, "event_time")));
-              if (hasText(text(event, "employee_id"))) {
+              if (matchedEmployee != null && hasText(text(matchedEmployee, "id"))) {
+                value.put("workerId", text(matchedEmployee, "id"));
+              } else if (hasText(text(event, "employee_id"))) {
                 value.put("workerId", text(event, "employee_id"));
               }
               if (hasText(text(event, "employee_code"))) {
                 value.put("employeeNo", text(event, "employee_code"));
+              } else if (matchedEmployee != null && hasText(text(matchedEmployee, "employee_code"))) {
+                value.put("employeeNo", text(matchedEmployee, "employee_code"));
               }
               if (hasText(text(event, "device_person_name"))) {
                 value.put("devicePersonName", text(event, "device_person_name"));
@@ -525,8 +542,8 @@ public class PublicDashboardService {
               value.put("matchStatus", matchStatus);
               value.put("timestamp", text(event, "event_time"));
               value.put("gate", firstNonBlank(text(event, "camera_name"), text(event, "camera_location"), "Hikvision Face"));
-              value.put("confidence", "matched".equals(matchStatus) ? 96 : 0);
-              value.put("outcome", "matched".equals(matchStatus) ? "matched" : "unknown");
+              value.put("confidence", matched ? 96 : 0);
+              value.put("outcome", matched ? "matched" : "unknown");
               if (hasText(text(event, "picture_url"))) {
                 value.put("pictureUrl", text(event, "picture_url"));
               } else if (hasText(text(event, "visible_light_pic_url"))) {
@@ -644,6 +661,13 @@ public class PublicDashboardService {
 
   private List<JsonNode> rows(ArrayNode arrayNode) {
     return JsonSupport.toList(arrayNode);
+  }
+
+  private void putEmployeeIdentifier(Map<String, JsonNode> employeesByIdentifier, String identifier, JsonNode employee) {
+    String normalized = normalizePin(identifier);
+    if (hasText(normalized)) {
+      employeesByIdentifier.putIfAbsent(normalized, employee);
+    }
   }
 
   private String normalizePin(String value) {

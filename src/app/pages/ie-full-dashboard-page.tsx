@@ -158,7 +158,7 @@ function mismatchLabel(worker: {
 }
 
 function isFaceEventMatched(event: FaceEvent) {
-  return event.matchStatus === "matched" || event.outcome === "matched";
+  return Boolean(event.workerId) || event.matchStatus === "matched" || event.outcome === "matched";
 }
 
 function faceEventPersonLabel(event: FaceEvent) {

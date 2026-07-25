@@ -15,7 +15,9 @@ export const EMPTY_PUBLIC_OPERATIONS_SNAPSHOT: OperationsSnapshot = {
     absentWorkers: 0,
   },
   departmentAttendance: [],
+  departments: [],
   workers: [],
+  employeeRoster: [],
   lines: [],
   faceEvents: [],
   fingerprintDeviceSummary: {

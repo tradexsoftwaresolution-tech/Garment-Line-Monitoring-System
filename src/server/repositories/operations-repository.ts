@@ -25,6 +25,7 @@ type ReconciliationRow =
 type AuditLogRow = Database["public"]["Tables"]["audit_logs"]["Row"];
 type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 type SystemSettingsRow = Database["public"]["Tables"]["system_settings"]["Row"];
+type DepartmentRow = Database["public"]["Tables"]["departments"]["Row"];
 
 function isMissingRelationError(error: { code?: string; message?: string }) {
   return (
@@ -59,6 +60,111 @@ export async function listEmployees(client: AppSupabaseClient) {
   }
 
   return (data || []) as EmployeeRow[];
+}
+
+export async function listDepartments(client: AppSupabaseClient) {
+  const { data, error } = await client
+    .from("departments")
+    .select("*")
+    .order("name", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data || []) as DepartmentRow[];
+}
+
+export async function createDepartment(
+  client: AppSupabaseClient,
+  payload: Database["public"]["Tables"]["departments"]["Insert"]
+) {
+  const { data, error } = await client
+    .from("departments")
+    .insert(payload)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data as DepartmentRow;
+}
+
+export async function updateDepartment(
+  client: AppSupabaseClient,
+  departmentId: string,
+  payload: Database["public"]["Tables"]["departments"]["Update"]
+) {
+  const { data, error } = await client
+    .from("departments")
+    .update(payload)
+    .eq("id", departmentId)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data as DepartmentRow;
+}
+
+export async function deactivateDepartment(client: AppSupabaseClient, departmentId: string) {
+  return updateDepartment(client, departmentId, {
+    is_active: false,
+    updated_at: new Date().toISOString(),
+  });
+}
+
+export async function listEmployeeRoster(client: AppSupabaseClient) {
+  const { data, error } = await client
+    .from("employees")
+    .select("*")
+    .order("employee_code", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data || []) as EmployeeRow[];
+}
+
+export async function createEmployee(
+  client: AppSupabaseClient,
+  payload: Database["public"]["Tables"]["employees"]["Insert"]
+) {
+  const { data, error } = await client
+    .from("employees")
+    .insert(payload)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data as EmployeeRow;
+}
+
+export async function updateEmployee(
+  client: AppSupabaseClient,
+  employeeId: string,
+  payload: Database["public"]["Tables"]["employees"]["Update"]
+) {
+  const { data, error } = await client
+    .from("employees")
+    .update(payload)
+    .eq("id", employeeId)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data as EmployeeRow;
 }
 
 export async function listEmployeeProfiles(client: AppSupabaseClient) {
@@ -641,8 +747,81 @@ export async function runTransferWorkerLineRpc(
   return data;
 }
 
+export async function runResignEmployeeRpc(
+  client: AppSupabaseClient,
+  args: {
+    employeeId: string;
+    resignedAt: string;
+    reason?: string | null;
+    hrNotes?: string | null;
+  }
+) {
+  const { data, error } = await client.rpc("rpc_resign_employee", {
+    p_employee_id: args.employeeId,
+    p_resigned_at: args.resignedAt,
+    p_reason: args.reason || null,
+    p_hr_notes: args.hrNotes || null,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data as { ok?: boolean; closed_assignments?: number };
+}
+
+export async function runReactivateEmployeeRpc(
+  client: AppSupabaseClient,
+  args: {
+    employeeId: string;
+    hrNotes?: string | null;
+  }
+) {
+  const { data, error } = await client.rpc("rpc_reactivate_employee", {
+    p_employee_id: args.employeeId,
+    p_hr_notes: args.hrNotes || null,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data as { ok?: boolean };
+}
+
+export async function runSetEmployeeInactiveRpc(
+  client: AppSupabaseClient,
+  args: {
+    employeeId: string;
+    reason?: string | null;
+    hrNotes?: string | null;
+  }
+) {
+  const { data, error } = await client.rpc("rpc_set_employee_inactive", {
+    p_employee_id: args.employeeId,
+    p_reason: args.reason || null,
+    p_hr_notes: args.hrNotes || null,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data as { ok?: boolean; closed_assignments?: number };
+}
+
 export async function runSyncReconciliationAlertsRpc(client: AppSupabaseClient) {
   const { data, error } = await client.rpc("rpc_sync_reconciliation_alerts");
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data;
+}
+
+export async function runSyncInactiveAbsenceAlertsRpc(client: AppSupabaseClient) {
+  const { data, error } = await client.rpc("rpc_sync_three_day_absence_inactive_alerts");
 
   if (error) {
     throw new Error(error.message);

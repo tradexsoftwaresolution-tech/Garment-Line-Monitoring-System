@@ -1,15 +1,19 @@
 begin;
 
-insert into public.departments (name)
+insert into public.departments (code, name)
 values
-  ('Sewing'),
-  ('Finishing'),
-  ('Packing'),
-  ('Cutting'),
-  ('Quality'),
-  ('Engineering'),
-  ('Human Resources')
-on conflict (name) do nothing;
+  ('SEWING', 'Sewing'),
+  ('FINISHING', 'Finishing'),
+  ('PACKING', 'Packing'),
+  ('CUTTING', 'Cutting'),
+  ('QUALITY', 'Quality'),
+  ('ENGINEERING', 'Engineering'),
+  ('HUMAN_RESOURCES', 'Human Resources')
+on conflict (code) do update
+set
+  name = excluded.name,
+  is_active = true,
+  updated_at = now();
 
 insert into public.leave_code_map (code, description, attendance_class)
 values
