@@ -38,6 +38,29 @@ const EMPTY_STATUS: HikvisionStatus = {
 
 type EventFilter = "all" | "matched" | "unmatched";
 
+function normalizeCameraKey(value: string | null | undefined) {
+  return String(value || "")
+    .trim()
+    .replace(/\/+$/, "")
+    .toLowerCase();
+}
+
+function eventMatchesCamera(event: HikvisionRecognitionEvent, camera: HikvisionCameraEndpoint) {
+  const eventKeys = [
+    event.cameraId,
+    event.cameraName,
+    event.cameraLocation,
+    event.cameraBaseUrl,
+  ]
+    .map(normalizeCameraKey)
+    .filter(Boolean);
+  const cameraKeys = [camera.id, camera.name, camera.location, camera.baseUrl]
+    .map(normalizeCameraKey)
+    .filter(Boolean);
+
+  return cameraKeys.some((cameraKey) => eventKeys.includes(cameraKey));
+}
+
 export function HikvisionFacePage() {
   const backendConfigured = isBackendConfigured();
   const { canDo } = useAuth();
@@ -52,6 +75,7 @@ export function HikvisionFacePage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [eventFilter, setEventFilter] = useState<EventFilter>("all");
+  const [eventCameraFilter, setEventCameraFilter] = useState("all");
   const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
 
@@ -98,32 +122,61 @@ export function HikvisionFacePage() {
     () => events.filter((event) => event.matchStatus !== "matched").length,
     [events]
   );
-  const matchedCount = useMemo(
-    () => events.filter((event) => event.matchStatus === "matched").length,
-    [events]
+  const selectedEventCamera = useMemo(
+    () => (eventCameraFilter === "all" ? undefined : cameras.find((camera) => camera.id === eventCameraFilter)),
+    [cameras, eventCameraFilter]
+  );
+  const cameraScopedEvents = useMemo(
+    () => (selectedEventCamera ? events.filter((event) => eventMatchesCamera(event, selectedEventCamera)) : events),
+    [events, selectedEventCamera]
+  );
+  const feedUnmatchedCount = useMemo(
+    () => cameraScopedEvents.filter((event) => event.matchStatus !== "matched").length,
+    [cameraScopedEvents]
+  );
+  const feedMatchedCount = useMemo(
+    () => cameraScopedEvents.filter((event) => event.matchStatus === "matched").length,
+    [cameraScopedEvents]
   );
   const filteredEvents = useMemo(
     () =>
-      events.filter((event) => {
+      cameraScopedEvents.filter((event) => {
         if (eventFilter === "matched") return event.matchStatus === "matched";
         if (eventFilter === "unmatched") return event.matchStatus !== "matched";
         return true;
       }),
-    [eventFilter, events]
+    [cameraScopedEvents, eventFilter]
   );
   const selectedCamera = selectedCameraId ? cameras.find((camera) => camera.id === selectedCameraId) : undefined;
   const selectedEvent = selectedEventId ? events.find((event) => event.id === selectedEventId) : undefined;
   const eventFilters = [
-    { id: "all", label: "All", count: events.length },
-    { id: "matched", label: "Matched", count: matchedCount },
-    { id: "unmatched", label: "Unmatched", count: unmatchedCount },
+    { id: "all", label: "All", count: cameraScopedEvents.length },
+    { id: "matched", label: "Matched", count: feedMatchedCount },
+    { id: "unmatched", label: "Unmatched", count: feedUnmatchedCount },
   ] satisfies Array<{ id: EventFilter; label: string; count: number }>;
+  const cameraEventFilters = useMemo(
+    () => [
+      { id: "all", label: "All cameras", count: events.length },
+      ...cameras.map((camera) => ({
+        id: camera.id,
+        label: camera.name || camera.baseUrl,
+        count: events.filter((event) => eventMatchesCamera(event, camera)).length,
+      })),
+    ],
+    [cameras, events]
+  );
 
   useEffect(() => {
     if (selectedCameraId && !cameras.some((camera) => camera.id === selectedCameraId)) {
       setSelectedCameraId(null);
     }
   }, [cameras, selectedCameraId]);
+
+  useEffect(() => {
+    if (eventCameraFilter !== "all" && !cameras.some((camera) => camera.id === eventCameraFilter)) {
+      setEventCameraFilter("all");
+    }
+  }, [cameras, eventCameraFilter]);
 
   useEffect(() => {
     if (selectedEventId && !events.some((event) => event.id === selectedEventId)) {
@@ -354,18 +407,35 @@ export function HikvisionFacePage() {
       >
         {events.length ? (
           <div className="ops-hikvision-feed">
-            <div className="ops-modern-segmented" aria-label="Recognition event filter">
-              {eventFilters.map((filter) => (
-                <button
-                  key={filter.id}
-                  type="button"
-                  className={eventFilter === filter.id ? "is-active" : undefined}
-                  onClick={() => setEventFilter(filter.id)}
+            <div className="ops-hikvision-feed-controls">
+              <label className="ops-filter-group ops-hikvision-camera-filter">
+                <span className="ops-filter-label">Camera</span>
+                <select
+                  className="ops-select"
+                  value={eventCameraFilter}
+                  onChange={(event) => setEventCameraFilter(event.target.value)}
                 >
-                  <span>{filter.label}</span>
-                  <strong>{filter.count}</strong>
-                </button>
-              ))}
+                  {cameraEventFilters.map((camera) => (
+                    <option key={camera.id} value={camera.id}>
+                      {camera.label} ({camera.count})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="ops-modern-segmented" aria-label="Recognition event filter">
+                {eventFilters.map((filter) => (
+                  <button
+                    key={filter.id}
+                    type="button"
+                    className={eventFilter === filter.id ? "is-active" : undefined}
+                    onClick={() => setEventFilter(filter.id)}
+                  >
+                    <span>{filter.label}</span>
+                    <strong>{filter.count}</strong>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {filteredEvents.length ? (
@@ -436,7 +506,7 @@ export function HikvisionFacePage() {
             ) : (
               <EmptyState
                 title="No events in this filter"
-                description="Change the recognition filter or run another poll."
+                description="Change the camera or recognition filter, or run another poll."
               />
             )}
           </div>
