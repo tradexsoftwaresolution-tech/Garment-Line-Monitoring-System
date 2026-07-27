@@ -51,13 +51,6 @@ public class PublicDashboardService {
                 Map.of("attendance_date", "eq." + attendanceDateText),
                 "employee_code.asc",
                 null));
-    List<JsonNode> fingerprintRows =
-        rows(
-            select(
-                "fingerprint_daily_attendance",
-                Map.of("attendance_date", "eq." + attendanceDateText),
-                "employee_code.asc",
-                null));
     List<JsonNode> zktecoEvents =
         rows(
             select(
@@ -73,10 +66,6 @@ public class PublicDashboardService {
             .collect(Collectors.toMap(row -> text(row, "employee_id"), row -> row, (left, right) -> left));
     Map<String, JsonNode> reconciliationByCode =
         reconciliationRows.stream()
-            .filter(row -> hasText(text(row, "employee_code")))
-            .collect(Collectors.toMap(row -> text(row, "employee_code"), row -> row, (left, right) -> left));
-    Map<String, JsonNode> fingerprintByCode =
-        fingerprintRows.stream()
             .filter(row -> hasText(text(row, "employee_code")))
             .collect(Collectors.toMap(row -> text(row, "employee_code"), row -> row, (left, right) -> left));
     Map<String, JsonNode> employeesByIdentifier = new LinkedHashMap<>();
@@ -101,7 +90,6 @@ public class PublicDashboardService {
               employee,
               profilesByEmployeeId.get(text(employee, "id")),
               reconciliationByCode.get(text(employee, "employee_code")),
-              fingerprintByCode.get(text(employee, "employee_code")),
               activeAssignmentsByEmployeeId.get(text(employee, "id"))));
     }
 
@@ -156,8 +144,12 @@ public class PublicDashboardService {
     LocalDate current = LocalDate.now(ATTENDANCE_ZONE);
     LocalDate latest = null;
 
-    latest = newestDate(latest, latestDateFrom("attendance_reconciliation", "attendance_date"));
-    latest = newestDate(latest, latestDateFrom("fingerprint_daily_attendance", "attendance_date"));
+    LocalDate canonicalLatest = latestDateFrom("attendance_reconciliation", "attendance_date");
+    if (canonicalLatest != null && !canonicalLatest.isAfter(current)) {
+      return canonicalLatest;
+    }
+
+    latest = newestDate(latest, canonicalLatest);
     latest = newestDate(latest, latestDateFrom("zkteco_fingerprint_events", "attendance_date"));
     latest = newestDate(latest, latestHikvisionDate());
 
@@ -206,25 +198,21 @@ public class PublicDashboardService {
       JsonNode employee,
       JsonNode profile,
       JsonNode reconciliationRow,
-      JsonNode fingerprintRow,
       JsonNode assignment) {
-    String attendanceStatus = attendanceStatus(reconciliationRow, fingerprintRow);
+    String attendanceStatus = attendanceStatus(reconciliationRow);
     String employeeName =
         firstNonBlank(
             text(employee, "display_name"),
             text(reconciliationRow, "employee_name"),
-            text(fingerprintRow, "employee_name"),
             text(employee, "employee_code"));
     String department =
         firstNonBlank(
             text(reconciliationRow, "department_name"),
-            text(fingerprintRow, "department_name"),
             text(employee, "department_name"),
             "Unassigned");
     String role =
         firstNonBlank(
             text(reconciliationRow, "designation"),
-            text(fingerprintRow, "designation"),
             text(employee, "designation"),
             "Worker");
 
@@ -243,7 +231,7 @@ public class PublicDashboardService {
     worker.put("shift", firstNonBlank(text(profile, "shift_name"), "Shift A"));
     worker.put("attendanceStatus", attendanceStatus);
     worker.put("faceVerificationStatus", faceVerification(reconciliationRow));
-    worker.put("fingerprintVerificationStatus", fingerprintVerification(fingerprintRow, reconciliationRow));
+    worker.put("fingerprintVerificationStatus", fingerprintVerification(reconciliationRow));
     worker.put("finalValidationStatus", reconciliationRow == null ? "Pending Validation" : "Fully Validated");
     worker.put("currentStatus", currentStatus(attendanceStatus, assignment));
     worker.put("skills", List.of());
@@ -255,7 +243,7 @@ public class PublicDashboardService {
     return worker;
   }
 
-  private String attendanceStatus(JsonNode reconciliationRow, JsonNode fingerprintRow) {
+  private String attendanceStatus(JsonNode reconciliationRow) {
     if (reconciliationRow != null) {
       String effectiveStatus =
           firstNonBlank(text(reconciliationRow, "manual_override_status"), text(reconciliationRow, "reconciliation_status"));
@@ -271,15 +259,6 @@ public class PublicDashboardService {
       }
       if (hasText(text(reconciliationRow, "face_first_seen"))) {
         return isLateFace(text(reconciliationRow, "face_first_seen")) ? "Late" : "Present";
-      }
-    }
-
-    if (fingerprintRow != null) {
-      if ("leave".equals(text(fingerprintRow, "attendance_state"))) {
-        return "On Leave";
-      }
-      if ("present".equals(text(fingerprintRow, "attendance_state"))) {
-        return decimal(fingerprintRow, "late_early_hours") > 0 ? "Late" : "Present";
       }
     }
 
@@ -304,15 +283,12 @@ public class PublicDashboardService {
         : "Missing";
   }
 
-  private String fingerprintVerification(JsonNode fingerprintRow, JsonNode reconciliationRow) {
-    if (fingerprintRow == null && reconciliationRow == null) {
+  private String fingerprintVerification(JsonNode reconciliationRow) {
+    if (reconciliationRow == null) {
       return "Pending";
     }
 
-    if (hasText(text(fingerprintRow, "time_in"))
-        || hasText(text(fingerprintRow, "time_out"))
-        || hasText(text(fingerprintRow, "leave_type"))
-        || hasText(text(reconciliationRow, "fingerprint_time_in"))
+    if (hasText(text(reconciliationRow, "fingerprint_time_in"))
         || hasText(text(reconciliationRow, "fingerprint_time_out"))
         || hasText(text(reconciliationRow, "leave_type"))) {
       return "Verified";

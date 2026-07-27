@@ -310,7 +310,7 @@ public class SkillMatrixService {
     Map<String, JsonNode> lineOperationsById = byId(rows.lineOperations());
     Map<String, JsonNode> employeesById = byId(rows.employees());
     Map<String, JsonNode> profilesByEmployeeId = byField(rows.employeeProfiles(), "employee_id");
-    Map<String, JsonNode> latestAttendanceByCode = latestAttendance(rows.fingerprintRows());
+    Map<String, JsonNode> latestAttendanceByCode = latestAttendance(rows.attendanceRows());
 
     List<Map<String, Object>> recommendations = new ArrayList<>();
     rows.linePositionAssignments().forEach(
@@ -544,7 +544,7 @@ public class SkillMatrixService {
         supabaseAdminClient.selectAll("style_operation_plans", activeStylePlans),
         supabaseAdminClient.selectAll("style_operation_plan_machines", activeStyleMachines),
         supabaseAdminClient.selectAll("line_style_schedules", styleSchedules),
-        supabaseAdminClient.select("fingerprint_daily_attendance", attendanceRows));
+        supabaseAdminClient.select("attendance_reconciliation", attendanceRows));
   }
 
   private Map<String, Object> matrixPayload(MatrixRows rows) {
@@ -771,7 +771,7 @@ public class SkillMatrixService {
     Map<String, JsonNode> activePositionAssignmentsByEmployeeId =
         activePositionAssignmentsByEmployeeId(rows.linePositionAssignments());
     Map<String, JsonNode> linesById = byId(rows.lines());
-    Map<String, JsonNode> latestAttendanceByCode = latestAttendance(rows.fingerprintRows());
+    Map<String, JsonNode> latestAttendanceByCode = latestAttendance(rows.attendanceRows());
 
     List<Map<String, Object>> candidates = new ArrayList<>();
     rows.employeeSkills().forEach(
@@ -901,11 +901,20 @@ public class SkillMatrixService {
     if (attendance == null) {
       return "Unknown";
     }
-    String state = JsonSupport.text(attendance, "attendance_state");
+    String state =
+        fallback(
+            JsonSupport.text(attendance, "manual_override_status"),
+            JsonSupport.text(attendance, "reconciliation_status"));
     if ("leave".equals(state)) {
       return "On Leave";
     }
-    if ("present".equals(state)) {
+    if ("absent".equals(state)) {
+      return "Absent";
+    }
+    if (JsonSupport.text(attendance, "fingerprint_time_in") != null
+        || JsonSupport.text(attendance, "fingerprint_time_out") != null
+        || JsonSupport.text(attendance, "face_first_seen") != null
+        || List.of("validated", "face_only", "fingerprint_only").contains(state)) {
       Double lateHours = JsonSupport.decimal(attendance, "late_early_hours");
       return lateHours != null && lateHours > 0 ? "Late" : "Present";
     }
@@ -1072,6 +1081,6 @@ public class SkillMatrixService {
       ArrayNode stylePlans,
       ArrayNode stylePlanMachines,
       ArrayNode lineStyleSchedules,
-      ArrayNode fingerprintRows) {
+      ArrayNode attendanceRows) {
   }
 }

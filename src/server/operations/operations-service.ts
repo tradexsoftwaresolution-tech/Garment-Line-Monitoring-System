@@ -397,7 +397,6 @@ function isPresentAttendanceStatus(status: WorkerProfile["attendanceStatus"]) {
 }
 
 function mapAttendanceStatus(args: {
-  fingerprintRow?: FingerprintAttendanceRow;
   reconciliationRow?: ReconciliationRow;
 }): WorkerProfile["attendanceStatus"] {
   if (args.reconciliationRow) {
@@ -421,22 +420,6 @@ function mapAttendanceStatus(args: {
     }
   }
 
-  if (args.fingerprintRow) {
-    if (args.fingerprintRow.attendance_state === "leave") {
-      return "On Leave";
-    }
-
-    if (args.fingerprintRow.attendance_state === "present") {
-      return toNumber(args.fingerprintRow.late_early_hours) > 0 ? "Late" : "Present";
-    }
-
-    if (args.reconciliationRow?.face_first_seen) {
-      return isAfterLateFaceArrivalCutoff(args.reconciliationRow.face_first_seen) ? "Late" : "Present";
-    }
-
-    return "Absent";
-  }
-
   return "Absent";
 }
 
@@ -453,17 +436,13 @@ function mapFaceVerification(row: ReconciliationRow | undefined): VerificationSt
 }
 
 function mapFingerprintVerification(
-  fingerprintRow: FingerprintAttendanceRow | undefined,
   reconciliationRow: ReconciliationRow | undefined
 ): VerificationState {
-  if (!fingerprintRow && !reconciliationRow) {
+  if (!reconciliationRow) {
     return "Pending";
   }
 
   if (
-    fingerprintRow?.time_in ||
-    fingerprintRow?.time_out ||
-    fingerprintRow?.leave_type ||
     reconciliationRow?.fingerprint_time_in ||
     reconciliationRow?.fingerprint_time_out ||
     reconciliationRow?.leave_type
@@ -798,7 +777,7 @@ function toAttendanceRate(presentWorkers: number, lateWorkers: number, totalWork
   return Math.round(((presentWorkers + lateWorkers) / totalWorkers) * 100);
 }
 
-function buildWeeklyAttendanceSeries(rows: FingerprintAttendanceRow[]): ReportSeriesPoint[] {
+function buildWeeklyReconciliationSeries(rows: ReconciliationRow[]): ReportSeriesPoint[] {
   const byDate = new Map<
     string,
     { label: string; value: number; secondaryValue: number; tertiaryValue: number }
@@ -814,16 +793,13 @@ function buildWeeklyAttendanceSeries(rows: FingerprintAttendanceRow[]): ReportSe
         secondaryValue: 0,
         tertiaryValue: 0,
       };
+    const status = mapAttendanceStatus({ reconciliationRow: row });
 
-    if (row.attendance_state === "present" && toNumber(row.late_early_hours) <= 0) {
+    if (status === "Present") {
       entry.value += 1;
-    }
-
-    if (row.attendance_state === "present" && toNumber(row.late_early_hours) > 0) {
+    } else if (status === "Late") {
       entry.tertiaryValue += 1;
-    }
-
-    if (row.attendance_state !== "present") {
+    } else if (status !== "On Leave") {
       entry.secondaryValue += 1;
     }
 
@@ -1050,10 +1026,31 @@ function buildAttendanceSummaries(args: {
     let leaveDays = 0;
     let otHours = 0;
     let resolvedDays = 0;
-    const fingerprintDates = new Set<string>();
+    const validationDates = new Set<string>();
+
+    validationRows.forEach((row) => {
+      validationDates.add(row.attendance_date);
+      const effectiveStatus = row.manual_override_status || row.reconciliation_status;
+
+      if (effectiveStatus === "leave") {
+        leaveDays += 1;
+      } else if (effectiveStatus === "absent") {
+        daysAbsent += 1;
+      } else if (isPresentReconciliationStatus(row)) {
+        daysPresent += 1;
+      }
+
+      otHours += toNumber(row.ot_hours);
+
+      if (!["needs_review", "anomaly"].includes(effectiveStatus)) {
+        resolvedDays += 1;
+      }
+    });
 
     fingerprintRows.forEach((row) => {
-      fingerprintDates.add(row.attendance_date);
+      if (validationDates.has(row.attendance_date)) {
+        return;
+      }
       if (row.attendance_state === "present") {
         daysPresent += 1;
       } else if (row.attendance_state === "leave") {
@@ -1061,28 +1058,7 @@ function buildAttendanceSummaries(args: {
       } else {
         daysAbsent += 1;
       }
-
       otHours += toNumber(row.ot_hours);
-    });
-
-    validationRows.forEach((row) => {
-      const effectiveStatus = row.manual_override_status || row.reconciliation_status;
-
-      if (!fingerprintDates.has(row.attendance_date)) {
-        if (effectiveStatus === "leave") {
-          leaveDays += 1;
-        } else if (effectiveStatus === "absent") {
-          daysAbsent += 1;
-        } else if (isPresentReconciliationStatus(row)) {
-          daysPresent += 1;
-        }
-
-        otHours += toNumber(row.ot_hours);
-      }
-
-      if (!["needs_review", "anomaly"].includes(effectiveStatus)) {
-        resolvedDays += 1;
-      }
     });
 
     const importedIncentive = incentiveRows.reduce(
@@ -1312,21 +1288,12 @@ export async function getOperationsSnapshot(
   });
 
   const currentDate = currentAttendanceDate();
-  const latestDataAttendanceDate = [
-    reconciliationRows[0]?.attendance_date,
-    fingerprintRows[0]?.attendance_date,
-  ]
-    .filter((date): date is string => Boolean(date))
-    .sort()
-    .at(-1);
+  const latestDataAttendanceDate = reconciliationRows[0]?.attendance_date;
   const latestAttendanceDate =
     latestDataAttendanceDate && latestDataAttendanceDate <= currentDate
       ? latestDataAttendanceDate
       : currentDate;
   const currentReconciliationRows = reconciliationRows.filter(
-    (row) => row.attendance_date === latestAttendanceDate
-  );
-  const currentFingerprintRows = fingerprintRows.filter(
     (row) => row.attendance_date === latestAttendanceDate
   );
 
@@ -1342,18 +1309,6 @@ export async function getOperationsSnapshot(
     const next = fingerprintRowsByEmployeeCode.get(row.employee_code) || [];
     next.push(row);
     fingerprintRowsByEmployeeCode.set(row.employee_code, next);
-  });
-
-  const latestFingerprintRowByEmployeeCode = new Map<string, FingerprintAttendanceRow>();
-  const fingerprintRowByEmployeeCodeAndDate = new Map<string, FingerprintAttendanceRow>();
-  currentFingerprintRows.forEach((row) => {
-    if (!latestFingerprintRowByEmployeeCode.has(row.employee_code)) {
-      latestFingerprintRowByEmployeeCode.set(row.employee_code, row);
-    }
-    const key = `${row.employee_code}:${row.attendance_date}`;
-    if (!fingerprintRowByEmployeeCodeAndDate.has(key)) {
-      fingerprintRowByEmployeeCodeAndDate.set(key, row);
-    }
   });
 
   const fingerprintDeviceAttendanceDate = latestAttendanceDate;
@@ -1375,16 +1330,10 @@ export async function getOperationsSnapshot(
       ? departmentsById.get(employee.department_id)
       : undefined;
     const effectiveAttendanceDate = latestAttendanceDate;
-    const sameDateFingerprintRow = fingerprintRowByEmployeeCodeAndDate.get(
-      `${employee.employee_code}:${effectiveAttendanceDate}`
-    );
-    const latestFingerprintRow =
-      sameDateFingerprintRow || latestFingerprintRowByEmployeeCode.get(employee.employee_code);
     const assignment = activeAssignmentsByEmployeeId.get(employee.id);
     const transfers = transfersByEmployeeId.get(employee.id) || [];
     const validationStatus = mapValidationStatus(latestRow, notes);
     const attendanceStatus = mapAttendanceStatus({
-      fingerprintRow: latestFingerprintRow,
       reconciliationRow: latestRow,
     });
     const hasRecentTransfer =
@@ -1398,7 +1347,6 @@ export async function getOperationsSnapshot(
       fullName:
         employee.display_name ||
         latestRow?.employee_name ||
-        latestFingerprintRow?.employee_name ||
         employee.employee_code,
       photoUrl: profile?.photo_url || undefined,
       departmentId: employee.department_id || masterDepartment?.id || undefined,
@@ -1406,21 +1354,16 @@ export async function getOperationsSnapshot(
         masterDepartment?.name ||
         employee.department_name ||
         latestRow?.department_name ||
-        latestFingerprintRow?.department_name ||
         "Unassigned",
       roleTitle:
         latestRow?.designation ||
-        latestFingerprintRow?.designation ||
         employee.designation ||
         "Worker",
       currentLineId: assignment?.production_line_id,
       shift: profile?.shift_name || "Shift A",
       attendanceStatus,
       faceVerificationStatus: mapFaceVerification(latestRow),
-      fingerprintVerificationStatus: mapFingerprintVerification(
-        latestFingerprintRow,
-        latestRow
-      ),
+      fingerprintVerificationStatus: mapFingerprintVerification(latestRow),
       finalValidationStatus: validationStatus,
       currentStatus: mapCurrentStatus({
         attendanceStatus,
@@ -1729,19 +1672,8 @@ export async function getOperationsSnapshot(
   const fingerprintEvents = currentReconciliationRows
     .filter((row) => row.fingerprint_time_in || row.fingerprint_time_out);
 
-  const fingerprintEventsFromAttendance = currentFingerprintRows
-    .filter((row) => row.time_in || row.time_out)
-    .map<FingerprintEvent>((row) => ({
-      id: `fingerprint-${row.id}`,
-      workerId: workersByCode.get(row.employee_code)?.id,
-      timestamp: toLocalTimestamp(row.attendance_date, row.time_in || row.time_out),
-      gate: "Fingerprint Import",
-      confidence: row.attendance_state === "present" ? 92 : 68,
-      outcome: row.attendance_state === "review" ? "delayed" : "matched",
-    }));
-
   const reportSeries = {
-    weeklyAttendance: buildWeeklyAttendanceSeries(fingerprintRows),
+    weeklyAttendance: buildWeeklyReconciliationSeries(reconciliationRows),
     departmentAttendance: buildDepartmentAttendanceSeries(departmentAttendance),
     lineAttendance: buildLineAttendanceSeries(mappedLines),
     transferHistory: buildTransferSeries(transferLogs),
@@ -1756,29 +1688,25 @@ export async function getOperationsSnapshot(
     lines: mappedLines,
     faceEvents,
     fingerprintDeviceSummary,
-    fingerprintEvents:
-      fingerprintEventsFromAttendance.length > 0
-        ? fingerprintEventsFromAttendance
-        : fingerprintEvents.map<FingerprintEvent>((row) => ({
-            id: `fingerprint-${row.id}`,
-            workerId: workersByCode.get(row.employee_code)?.id,
-            timestamp: toLocalTimestamp(
-              row.attendance_date,
-              row.fingerprint_time_in || row.fingerprint_time_out
-            ),
-            gate: "Fingerprint Import",
-            confidence:
-              row.confidence_level === "high"
-                ? 95
-                : row.confidence_level === "medium"
-                  ? 70
-                  : 44,
-            outcome:
-              (row.manual_override_status || row.reconciliation_status) ===
-              "fingerprint_only"
-                ? "delayed"
-                : "matched",
-          })),
+    fingerprintEvents: fingerprintEvents.map<FingerprintEvent>((row) => ({
+      id: `fingerprint-${row.id}`,
+      workerId: workersByCode.get(row.employee_code)?.id,
+      timestamp: toLocalTimestamp(
+        row.attendance_date,
+        row.fingerprint_time_in || row.fingerprint_time_out
+      ),
+      gate: "Fingerprint Import",
+      confidence:
+        row.confidence_level === "high"
+          ? 95
+          : row.confidence_level === "medium"
+            ? 70
+            : 44,
+      outcome:
+        (row.manual_override_status || row.reconciliation_status) === "fingerprint_only"
+          ? "delayed"
+          : "matched",
+    })),
     validationRecords,
     lineAssignments: lineAssignmentsForUi,
     lineOutputEntries: lineOutputEntries.map(mapLineOutputEntry),

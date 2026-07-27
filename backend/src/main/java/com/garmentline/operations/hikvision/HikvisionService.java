@@ -583,32 +583,25 @@ public class HikvisionService {
   }
 
   private Map<String, Object> newFaceAttendanceRow(FaceAttendanceAccumulator attendance) {
-    JsonNode fingerprint = fetchFingerprintAttendance(attendance.employeeCode, attendance.attendanceDate);
-    boolean hasFingerprint =
-        fingerprint != null
-            && ("present".equals(JsonSupport.text(fingerprint, "attendance_state"))
-                || hasText(JsonSupport.text(fingerprint, "time_in"))
-                || hasText(JsonSupport.text(fingerprint, "time_out")));
-    boolean isLeave = fingerprint != null && "leave".equals(JsonSupport.text(fingerprint, "attendance_state"));
-    String status = faceAttendanceStatus(isLeave ? "leave" : null, hasFingerprint);
+    String status = faceAttendanceStatus(null, false);
 
     Map<String, Object> row = new LinkedHashMap<>();
     row.put("face_import_batch_id", null);
-    row.put("fingerprint_import_batch_id", fingerprint == null ? null : JsonSupport.text(fingerprint, "import_batch_id"));
+    row.put("fingerprint_import_batch_id", null);
     row.put("employee_code", attendance.employeeCode);
     row.put("attendance_date", attendance.attendanceDate);
-    row.put("employee_name", firstNonBlank(fingerprint == null ? null : JsonSupport.text(fingerprint, "employee_name"), attendance.employeeName));
-    row.put("designation", firstNonBlank(fingerprint == null ? null : JsonSupport.text(fingerprint, "designation"), attendance.designation));
-    row.put("department_name", firstNonBlank(fingerprint == null ? null : JsonSupport.text(fingerprint, "department_name"), attendance.department));
+    row.put("employee_name", attendance.employeeName);
+    row.put("designation", attendance.designation);
+    row.put("department_name", attendance.department);
     row.put("face_first_seen", databaseTime(attendance.firstSeen));
     row.put("face_last_seen", databaseTime(attendance.lastSeen));
     row.put("face_event_count", attendance.eventCount);
     row.put("duplicate_face_event_count", 0);
-    row.put("fingerprint_time_in", fingerprint == null ? null : JsonSupport.text(fingerprint, "time_in"));
-    row.put("fingerprint_time_out", fingerprint == null ? null : JsonSupport.text(fingerprint, "time_out"));
-    row.put("late_early_hours", fingerprint == null ? null : JsonSupport.decimal(fingerprint, "late_early_hours"));
-    row.put("ot_hours", fingerprint == null ? null : JsonSupport.decimal(fingerprint, "ot_hours"));
-    row.put("leave_type", fingerprint == null ? null : JsonSupport.text(fingerprint, "leave_type"));
+    row.put("fingerprint_time_in", null);
+    row.put("fingerprint_time_out", null);
+    row.put("late_early_hours", null);
+    row.put("ot_hours", null);
+    row.put("leave_type", null);
     row.put("reconciliation_status", status);
     row.put("exception_reason", faceAttendanceException(status));
     row.put("confidence_level", "validated".equals(status) ? "high" : "anomaly".equals(status) ? "low" : "medium");
@@ -624,21 +617,9 @@ public class HikvisionService {
     boolean existingHasFingerprint =
         hasText(JsonSupport.text(existing, "fingerprint_time_in"))
             || hasText(JsonSupport.text(existing, "fingerprint_time_out"));
-    JsonNode fingerprint =
-        existingHasFingerprint
-            ? null
-            : fetchFingerprintAttendance(attendance.employeeCode, attendance.attendanceDate);
-    boolean fetchedHasFingerprint =
-        fingerprint != null
-            && ("present".equals(JsonSupport.text(fingerprint, "attendance_state"))
-                || hasText(JsonSupport.text(fingerprint, "time_in"))
-                || hasText(JsonSupport.text(fingerprint, "time_out")));
-    boolean hasFingerprint = existingHasFingerprint || fetchedHasFingerprint;
     String existingStatus = JsonSupport.text(existing, "reconciliation_status");
-    boolean isLeave =
-        "leave".equals(existingStatus)
-            || (fingerprint != null && "leave".equals(JsonSupport.text(fingerprint, "attendance_state")));
-    String nextStatus = faceAttendanceStatus(isLeave ? "leave" : existingStatus, hasFingerprint);
+    boolean isLeave = "leave".equals(existingStatus);
+    String nextStatus = faceAttendanceStatus(isLeave ? "leave" : existingStatus, existingHasFingerprint);
 
     Map<String, Object> row = new LinkedHashMap<>();
     row.put("employee_name", firstNonBlank(JsonSupport.text(existing, "employee_name"), attendance.employeeName));
@@ -652,33 +633,11 @@ public class HikvisionService {
         maxTimeText(existingLastSeen, databaseTime(attendance.lastSeen)));
     row.put("face_event_count", existingFaceCount + attendance.eventCount);
     row.put("duplicate_face_event_count", Optional.ofNullable(JsonSupport.integer(existing, "duplicate_face_event_count")).orElse(0));
-    if (fingerprint != null) {
-      row.put("fingerprint_import_batch_id", JsonSupport.text(fingerprint, "import_batch_id"));
-      row.put("fingerprint_time_in", JsonSupport.text(fingerprint, "time_in"));
-      row.put("fingerprint_time_out", JsonSupport.text(fingerprint, "time_out"));
-      row.put("late_early_hours", JsonSupport.decimal(fingerprint, "late_early_hours"));
-      row.put("ot_hours", JsonSupport.decimal(fingerprint, "ot_hours"));
-      row.put("leave_type", JsonSupport.text(fingerprint, "leave_type"));
-    }
     row.put("reconciliation_status", nextStatus);
     row.put("exception_reason", faceAttendanceException(nextStatus));
     row.put("confidence_level", "validated".equals(nextStatus) ? "high" : "anomaly".equals(nextStatus) ? "low" : "medium");
     row.put("rule_flags", faceAttendanceRuleFlags(nextStatus));
     return row;
-  }
-
-  private JsonNode fetchFingerprintAttendance(String employeeCode, String attendanceDate) {
-    try {
-      MultiValueMap<String, String> query = new LinkedMultiValueMap<>();
-      query.add("employee_code", "eq." + employeeCode);
-      query.add("attendance_date", "eq." + attendanceDate);
-      query.add("order", "created_at.desc");
-      query.add("limit", "1");
-      ArrayNode rows = supabaseAdminClient.select("fingerprint_daily_attendance", query);
-      return rows.isEmpty() ? null : rows.get(0);
-    } catch (RuntimeException ignored) {
-      return null;
-    }
   }
 
   private String faceAttendanceStatus(String existingStatus, boolean hasFingerprint) {
@@ -696,7 +655,7 @@ public class HikvisionService {
   private String faceAttendanceException(String status) {
     return switch (status) {
       case "validated" -> null;
-      case "anomaly" -> "Fingerprint export marks leave while live Hikvision face activity exists on the same day.";
+      case "anomaly" -> "Attendance reconciliation marks leave while live Hikvision face activity exists on the same day.";
       default -> "Live Hikvision face activity exists without a matching fingerprint attendance row.";
     };
   }
