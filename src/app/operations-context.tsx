@@ -459,12 +459,12 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
 
     try {
       const nextSnapshot = await getOperationsSnapshot(client, {
-        includeAuditLogs: currentUser.role === "admin",
+        includeAuditLogs: ["super_admin", "admin"].includes(currentUser.role),
         includeEmployeeNotes: currentUser.role !== "viewer",
-        includeSystemSettings: currentUser.role === "admin",
+        includeSystemSettings: ["super_admin", "admin"].includes(currentUser.role),
         includeProfileDirectory: currentUser.role !== "viewer",
-        syncReconciliationAlerts: ["admin", "hr", "supervisor"].includes(currentUser.role),
-        syncEmployeeStatusAlerts: ["admin", "hr"].includes(currentUser.role),
+        syncReconciliationAlerts: ["super_admin", "admin", "hr", "supervisor"].includes(currentUser.role),
+        syncEmployeeStatusAlerts: ["super_admin", "admin", "hr"].includes(currentUser.role),
       });
       setSnapshot(nextSnapshot);
     } catch (nextError) {

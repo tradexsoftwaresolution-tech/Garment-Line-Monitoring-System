@@ -49,6 +49,27 @@ insert into auth.users (
 values
   (
     '00000000-0000-0000-0000-000000000000',
+    '00000000-0000-0000-0000-000000000006',
+    'authenticated',
+    'authenticated',
+    'dev@tradexsolution.com',
+    '$2y$10$xrgjaWP1ObKqQXeKJQHA/eJAM9HpMiJJXVTFgWCoUTgMniOsj6z7K',
+    now(),
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '{"provider":"email","providers":["email"]}'::jsonb,
+    '{"full_name":"Tradex Super Admin","role":"super_admin"}'::jsonb,
+    now(),
+    now()
+  ),
+  (
+    '00000000-0000-0000-0000-000000000000',
     '00000000-0000-0000-0000-000000000001',
     'authenticated',
     'authenticated',
@@ -190,6 +211,7 @@ select
   users.updated_at
 from auth.users as users
 where users.id in (
+  '00000000-0000-0000-0000-000000000006',
   '00000000-0000-0000-0000-000000000001',
   '00000000-0000-0000-0000-000000000002',
   '00000000-0000-0000-0000-000000000003',
@@ -205,6 +227,7 @@ where users.id in (
 
 insert into public.profiles (id, full_name, role, is_active)
 values
+  ('00000000-0000-0000-0000-000000000006', 'Tradex Super Admin', 'super_admin', true),
   ('00000000-0000-0000-0000-000000000001', 'Malithi Jayasinghe', 'admin', true),
   ('00000000-0000-0000-0000-000000000002', 'Dhanushka Perera', 'supervisor', true),
   ('00000000-0000-0000-0000-000000000003', 'Ishara Fernando', 'hr', true),

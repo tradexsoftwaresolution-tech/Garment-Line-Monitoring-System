@@ -21,10 +21,39 @@ type GenericView<Row> = {
 type ProfileRow = {
   id: string;
   full_name: string | null;
-  role: "admin" | "supervisor" | "hr" | "ie" | "viewer";
+  role: "super_admin" | "admin" | "supervisor" | "hr" | "ie" | "viewer";
   is_active: boolean;
   created_at: string;
   updated_at: string;
+};
+
+type RbacRoleRow = {
+  role_code: string;
+  label: string;
+  description: string;
+  is_system_role: boolean;
+  is_active: boolean;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+type RbacPermissionRow = {
+  permission_key: string;
+  permission_type: "route" | "action";
+  label: string;
+  description: string;
+  is_active: boolean;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+type RbacRolePermissionRow = {
+  role_code: string;
+  permission_key: string;
+  granted_by: string | null;
+  granted_at: string;
 };
 
 type DepartmentRow = {
@@ -535,6 +564,41 @@ export interface Database {
           is_active?: boolean;
           created_at?: string;
           updated_at?: string;
+        }
+      >;
+      rbac_roles: GenericTable<
+        RbacRoleRow,
+        {
+          role_code: string;
+          label: string;
+          description?: string;
+          is_system_role?: boolean;
+          is_active?: boolean;
+          display_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        }
+      >;
+      rbac_permissions: GenericTable<
+        RbacPermissionRow,
+        {
+          permission_key: string;
+          permission_type: RbacPermissionRow["permission_type"];
+          label: string;
+          description?: string;
+          is_active?: boolean;
+          display_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        }
+      >;
+      rbac_role_permissions: GenericTable<
+        RbacRolePermissionRow,
+        {
+          role_code: string;
+          permission_key: string;
+          granted_by?: string | null;
+          granted_at?: string;
         }
       >;
       departments: GenericTable<
@@ -1049,6 +1113,10 @@ export interface Database {
         Args: { allowed_roles: string[] };
         Returns: boolean;
       };
+      replace_rbac_role_permissions: {
+        Args: { p_grants: Json };
+        Returns: Json;
+      };
       log_audit_event: {
         Args: {
           p_action_type: string;
@@ -1101,6 +1169,15 @@ export interface Database {
       };
       rpc_sync_reconciliation_alerts: {
         Args: Record<PropertyKey, never>;
+        Returns: Json;
+      };
+      rpc_resign_employee: {
+        Args: {
+          p_employee_id: string;
+          p_resigned_at: string;
+          p_reason?: string | null;
+          p_hr_notes?: string | null;
+        };
         Returns: Json;
       };
       rpc_reactivate_employee: {

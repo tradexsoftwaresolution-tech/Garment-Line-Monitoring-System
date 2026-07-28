@@ -52,6 +52,7 @@ public class DirectoryService {
 
   private String roleTitle(String role) {
     return switch (role) {
+      case "super_admin" -> "Platform Super Administrator";
       case "admin" -> "Factory Systems Administrator";
       case "supervisor" -> "Floor Supervisor";
       case "hr" -> "HR Operations Lead";
@@ -62,6 +63,7 @@ public class DirectoryService {
 
   private String roleDepartment(String role) {
     return switch (role) {
+      case "super_admin" -> "Platform Administration";
       case "admin" -> "Operations";
       case "supervisor" -> "Production";
       case "hr" -> "Human Resources";

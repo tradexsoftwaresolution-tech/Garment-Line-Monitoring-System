@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -11,6 +12,11 @@ import type { Session, User } from "@supabase/supabase-js";
 import { isBackendConfigured } from "@/lib/backend/env";
 import { listActiveAppUsersFromBackend } from "@/lib/backend/pipeline-api";
 import { canAccessRoute, canPerform, type AppAction, type AppRouteKey } from "./permissions";
+import {
+  buildRbacAccessMatrix,
+  listRbacConfiguration,
+  type RbacAccessMatrix,
+} from "./modules/rbac/rbac-service";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import type { Database } from "@/types/database";
@@ -30,6 +36,7 @@ type AuthContextValue = {
   setCurrentUserId: (userId: string) => void;
   canAccess: (routeKey: AppRouteKey) => boolean;
   canDo: (action: AppAction) => boolean;
+  refreshAccessPolicy: () => Promise<void>;
   signInWithPassword: (
     email: string,
     password: string
@@ -45,6 +52,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 const ROLE_TITLES: Record<UserRole, string> = {
+  super_admin: "Platform Super Administrator",
   admin: "Factory Systems Administrator",
   supervisor: "Floor Supervisor",
   hr: "HR Operations Lead",
@@ -53,6 +61,7 @@ const ROLE_TITLES: Record<UserRole, string> = {
 };
 
 const ROLE_DEPARTMENTS: Record<UserRole, string> = {
+  super_admin: "Platform Administration",
   admin: "Operations",
   supervisor: "Production",
   hr: "Human Resources",
@@ -142,13 +151,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     null
   );
   const [users, setUsers] = useState<AppUser[]>([]);
+  const [accessMatrix, setAccessMatrix] = useState<RbacAccessMatrix | null>(null);
   const [loading, setLoading] = useState(isConfigured);
   const profileLoadedForUserIdRef = useRef<string | null>(null);
+
+  const loadAccessMatrix = useCallback(async () => {
+    if (!supabaseClient) {
+      return null;
+    }
+
+    try {
+      return buildRbacAccessMatrix(await listRbacConfiguration(supabaseClient));
+    } catch (_error) {
+      return null;
+    }
+  }, [supabaseClient]);
 
   useEffect(() => {
     if (!supabaseClient) {
       setLoading(false);
       setUsers([]);
+      setAccessMatrix(null);
       return undefined;
     }
 
@@ -183,6 +206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profileLoadedForUserIdRef.current = null;
         setProfile(null);
         setUsers([]);
+        setAccessMatrix(null);
         setLoading(false);
         return;
       }
@@ -197,6 +221,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (profileLoadedForUserIdRef.current !== nextUserId) {
         setProfile(null);
         setUsers([]);
+        setAccessMatrix(null);
       }
 
       setLoading(true);
@@ -213,10 +238,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const nextProfile = error ? null : data;
       const currentUser = mapProfileToUser(nextProfile, nextSession.user);
+      const nextAccessMatrix = await loadAccessMatrix();
       setProfile(nextProfile);
+      setAccessMatrix(nextAccessMatrix);
       profileLoadedForUserIdRef.current = nextUserId;
 
-      if (["admin", "hr", "supervisor", "ie"].includes(currentUser.role)) {
+      if (["super_admin", "admin", "hr", "supervisor", "ie"].includes(currentUser.role)) {
         try {
           const visibleUsers = isBackendConfigured()
             ? await listActiveAppUsersFromBackend()
@@ -250,6 +277,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(null);
         setProfile(null);
         setUsers([]);
+        setAccessMatrix(null);
         setLoading(false);
       });
 
@@ -294,9 +322,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       setCurrentUserId: () => {},
       canAccess: (routeKey) =>
-        Boolean(session?.user) && canAccessRoute(currentUser.role, routeKey),
+        Boolean(session?.user) && canAccessRoute(currentUser.role, routeKey, accessMatrix?.routes),
       canDo: (action) =>
-        Boolean(session?.user) && canPerform(currentUser.role, action),
+        Boolean(session?.user) && canPerform(currentUser.role, action, accessMatrix?.actions),
+      refreshAccessPolicy: async () => {
+        if (!session?.user) {
+          setAccessMatrix(null);
+          return;
+        }
+
+        setAccessMatrix(await loadAccessMatrix());
+      },
       signInWithPassword: async (email, password) => {
         if (!supabaseClient) {
           return {
@@ -370,7 +406,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       },
     }),
-    [currentUser, isConfigured, loading, mode, session, supabaseClient, users]
+    [accessMatrix, currentUser, isConfigured, loadAccessMatrix, loading, mode, session, supabaseClient, users]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

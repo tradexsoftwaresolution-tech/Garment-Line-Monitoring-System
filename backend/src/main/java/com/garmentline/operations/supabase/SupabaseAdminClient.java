@@ -193,6 +193,36 @@ public class SupabaseAdminClient {
     }
   }
 
+  public JsonNode listAuthUsers() {
+    return performGet(
+        URI.create(baseUrl + "/auth/v1/admin/users?per_page=1000&page=1"),
+        MediaType.APPLICATION_JSON_VALUE);
+  }
+
+  public ObjectNode createAuthUser(Object payload) {
+    return executeObjectRequest(
+        webClient
+            .post()
+            .uri(URI.create(baseUrl + "/auth/v1/admin/users"))
+            .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.APPLICATION_JSON)
+            .bodyValue(payload));
+  }
+
+  public ObjectNode updateAuthUser(String userId, Object payload) {
+    return executeObjectRequest(
+        webClient
+            .put()
+            .uri(
+                URI.create(
+                    baseUrl
+                        + "/auth/v1/admin/users/"
+                        + UriUtils.encodePathSegment(userId, StandardCharsets.UTF_8)))
+            .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.APPLICATION_JSON)
+            .bodyValue(payload));
+  }
+
   public void uploadObject(String bucket, String path, byte[] payload, String contentType) {
     URI uri =
         URI.create(

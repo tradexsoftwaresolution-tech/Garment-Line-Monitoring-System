@@ -514,7 +514,7 @@ export function ProductionLineDetailPage() {
                   <StatusBadge key={warning} label={warning} tone="warning" />
                 ))}
               </div>
-              {currentUser.role === "admin" ? (
+              {["super_admin", "admin"].includes(currentUser.role) ? (
                 <button type="button" className="ops-button ops-button-ghost" onClick={() => void loadAudit()}>
                   {audit ? "Hide Audit" : auditLoading ? "Loading Audit..." : "View Audit"}
                 </button>

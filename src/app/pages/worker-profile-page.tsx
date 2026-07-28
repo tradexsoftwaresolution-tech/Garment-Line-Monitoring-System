@@ -106,7 +106,7 @@ export function WorkerProfilePage() {
   }, [worker?.id]);
 
   useEffect(() => {
-    if (!["admin", "supervisor", "hr"].includes(currentUser.role)) {
+    if (!["super_admin", "admin", "supervisor", "hr"].includes(currentUser.role)) {
       setSkillMatrix(EMPTY_SKILL_MATRIX);
       setSkillError(null);
       return;
@@ -135,7 +135,7 @@ export function WorkerProfilePage() {
   }, [skillForm.operationId, skillMatrix.operations]);
 
   useEffect(() => {
-    if (!worker?.id || !["admin", "hr", "supervisor"].includes(currentUser.role)) {
+    if (!worker?.id || !["super_admin", "admin", "hr", "supervisor"].includes(currentUser.role)) {
       setProfileLeaveRequests([]);
       setProfileLeaveError(null);
       return;
@@ -168,7 +168,7 @@ export function WorkerProfilePage() {
   const workerOt = overtimeRecords.filter((item) => item.workerId === worker?.id);
   const workerLeave = leaveRecords.filter((item) => item.workerId === worker?.id);
   const availableLines = useMemo(() => lines.filter((line) => line.status !== "Idle"), [lines]);
-  const canManageSkills = ["admin", "supervisor", "hr"].includes(currentUser.role);
+  const canManageSkills = ["super_admin", "admin", "supervisor", "hr"].includes(currentUser.role);
   const workerOperationSkills = skillMatrix.employeeSkills
     .filter((skill) => skill.employeeId === worker?.id)
     .sort((a, b) => b.skillLevelPercentage - a.skillLevelPercentage);

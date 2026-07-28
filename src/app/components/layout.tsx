@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   Menu,
   ScanFace,
+  Settings,
   Shield,
   UserCog,
   Users,
@@ -117,6 +118,18 @@ const navSections: Array<{ label: string; items: NavItem[] }> = [
         label: "Incentive Calculation",
         description: "Attendance & payouts",
         icon: ClipboardCheck,
+      },
+    ],
+  },
+  {
+    label: "Administration",
+    items: [
+      {
+        path: "/settings",
+        routeKey: "settings",
+        label: "Settings",
+        description: "Access & rules",
+        icon: Settings,
       },
     ],
   },

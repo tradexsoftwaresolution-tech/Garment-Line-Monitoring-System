@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Calculator, RotateCcw, Shield, SlidersHorizontal } from "lucide-react";
 import { useAuth } from "../auth";
 import { useOperations } from "../operations-context";
-import { roleLabels } from "../permissions";
 import { Button, Card, KpiCard, PageHeader, StatusBadge } from "../components/ops-ui";
+import { RoleAccessManager } from "../modules/rbac/role-access-manager";
+import { UserManagementPanel } from "../modules/rbac/user-management-panel";
 import {
   getEfficiencyRulesPreviewFromBackend,
   getIncentiveRulesPreviewFromBackend,
@@ -157,16 +158,6 @@ export function SettingsPage() {
   ) => {
     await updateSetting({ key, value, actor: currentUser.name });
   };
-
-  const roleAccessRows = [
-    { role: "admin", access: "Full operational access, settings, audit, and all actions." },
-    { role: "supervisor", access: "Lines, workers, transfers, alerts, and floor balancing." },
-    { role: "hr", access: "Validation, attendance, leave, OT, and reports." },
-    {
-      role: "viewer",
-      access: "Read-only dashboard, reports, self-service preview, and display mode.",
-    },
-  ] as const;
 
   const formulaRows = useMemo(
     () =>
@@ -503,22 +494,9 @@ export function SettingsPage() {
         </Card>
       </section>
 
-      <Card title="Role-Based Access Model" subtitle="Current route and action boundaries used throughout the frontend prototype.">
-        <div className="ops-list">
-          {roleAccessRows.map((row) => (
-            <div key={row.role} className="ops-list-item">
-              <div className="ops-item-header">
-                <div className="ops-item-title">{roleLabels[row.role]}</div>
-                <StatusBadge
-                  label={row.role === currentUser.role ? "Current Session" : "Available"}
-                  tone={row.role === currentUser.role ? "info" : "neutral"}
-                />
-              </div>
-              <div className="ops-item-description">{row.access}</div>
-            </div>
-          ))}
-        </div>
-      </Card>
+      <UserManagementPanel />
+
+      <RoleAccessManager />
     </div>
   );
 }

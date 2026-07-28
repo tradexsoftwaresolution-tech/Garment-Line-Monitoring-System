@@ -294,7 +294,7 @@ export function SkillMatrixPage() {
         matrix.employeeSkills.length;
   const scheduledCount = matrix.lineStyleSchedules.filter((schedule) => schedule.status === "scheduled").length;
   const activeStyleCount = matrix.lineStyleSchedules.filter((schedule) => schedule.status === "active").length;
-  const canPlanSkills = ["admin", "supervisor", "hr"].includes(currentUser.role);
+  const canPlanSkills = ["super_admin", "admin", "supervisor", "hr"].includes(currentUser.role);
 
   const setMatrixFromSave = (nextMatrix: SkillMatrixSnapshot, nextMessage: string) => {
     setMatrix(nextMatrix);

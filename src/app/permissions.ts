@@ -26,6 +26,7 @@ export type AppRouteKey =
   | "display";
 
 export type AppAction =
+  | "manageRoleAccess"
   | "manageWorkers"
   | "assignLine"
   | "transferLine"
@@ -43,12 +44,18 @@ export type AppAction =
   | "viewAudit";
 
 export const roleLabels: Record<UserRole, string> = {
+  super_admin: "Super Admin",
   admin: "Admin",
   supervisor: "Supervisor",
   hr: "HR",
   ie: "IE",
   viewer: "Viewer / Management",
 };
+
+const allRoles: UserRole[] = ["super_admin", "admin", "supervisor", "hr", "ie", "viewer"];
+
+const withSuperAdmin = (roles: UserRole[]): UserRole[] =>
+  roles.includes("super_admin") ? roles : ["super_admin", ...roles];
 
 export const routeTitles: Record<AppRouteKey, string> = {
   dashboard: "Dashboard",
@@ -77,53 +84,85 @@ export const routeTitles: Record<AppRouteKey, string> = {
 };
 
 export const routePermissions: Record<AppRouteKey, UserRole[]> = {
-  dashboard: ["admin", "supervisor", "hr", "ie", "viewer"],
-  ieLineAttendance: ["admin", "ie"],
-  ieLineFloorPlan: ["admin", "ie"],
-  ieAnalytics: ["admin", "ie"],
-  imports: ["admin", "hr"],
-  workers: ["admin", "supervisor", "hr", "ie"],
-  employeeManagement: ["admin", "hr"],
-  workerProfile: ["admin", "supervisor", "hr", "ie"],
-  leaveManagement: ["admin", "hr"],
-  employeePortal: ["admin", "supervisor", "hr", "ie", "viewer"],
-  validation: ["admin", "supervisor", "hr"],
-  hikvision: ["admin", "supervisor", "hr", "ie", "viewer"],
-  zkteco: ["admin", "supervisor", "hr", "ie", "viewer"],
-  skillMatrix: ["admin", "supervisor"],
-  productionLines: ["admin", "supervisor", "hr", "viewer"],
-  lineAssignment: ["admin", "supervisor"],
-  alerts: ["admin", "supervisor", "hr", "ie"],
-  attendance: ["admin", "supervisor", "viewer"],
-  reports: ["admin", "supervisor", "hr", "viewer"],
-  settings: ["admin"],
-  audit: ["admin", "hr"],
-  selfService: ["admin", "supervisor", "hr", "ie", "viewer"],
-  display: ["admin", "supervisor", "hr", "ie", "viewer"],
+  dashboard: allRoles,
+  ieLineAttendance: withSuperAdmin(["admin", "ie"]),
+  ieLineFloorPlan: withSuperAdmin(["admin", "ie"]),
+  ieAnalytics: withSuperAdmin(["admin", "ie"]),
+  imports: withSuperAdmin(["admin", "hr"]),
+  workers: withSuperAdmin(["admin", "supervisor", "hr", "ie"]),
+  employeeManagement: withSuperAdmin(["admin", "hr"]),
+  workerProfile: withSuperAdmin(["admin", "supervisor", "hr", "ie"]),
+  leaveManagement: withSuperAdmin(["admin", "hr"]),
+  employeePortal: allRoles,
+  validation: withSuperAdmin(["admin", "supervisor", "hr"]),
+  hikvision: allRoles,
+  zkteco: allRoles,
+  skillMatrix: withSuperAdmin(["admin", "supervisor"]),
+  productionLines: withSuperAdmin(["admin", "supervisor", "hr", "viewer"]),
+  lineAssignment: withSuperAdmin(["admin", "supervisor"]),
+  alerts: withSuperAdmin(["admin", "supervisor", "hr", "ie"]),
+  attendance: withSuperAdmin(["admin", "supervisor", "viewer"]),
+  reports: withSuperAdmin(["admin", "supervisor", "hr", "viewer"]),
+  settings: withSuperAdmin(["admin"]),
+  audit: withSuperAdmin(["admin", "hr"]),
+  selfService: allRoles,
+  display: allRoles,
 };
 
 export const actionPermissions: Record<AppAction, UserRole[]> = {
-  manageWorkers: ["admin", "supervisor", "hr"],
-  assignLine: ["admin", "supervisor"],
-  transferLine: ["admin", "supervisor"],
-  resolveValidation: ["admin", "hr"],
-  markValidationVerified: ["admin", "hr"],
-  escalateValidation: ["admin", "hr"],
-  manageAlerts: ["admin", "supervisor", "hr", "ie"],
-  exportAttendance: ["admin", "hr"],
-  exportReports: ["admin", "supervisor", "hr", "viewer"],
-  editSettings: ["admin"],
-  addLineOutput: ["admin", "supervisor"],
-  overrideAttendance: ["admin", "hr"],
-  addWorkerNote: ["admin", "supervisor", "hr"],
-  markException: ["admin", "supervisor", "hr"],
-  viewAudit: ["admin"],
+  manageRoleAccess: ["super_admin"],
+  manageWorkers: withSuperAdmin(["admin", "supervisor", "hr"]),
+  assignLine: withSuperAdmin(["admin", "supervisor"]),
+  transferLine: withSuperAdmin(["admin", "supervisor"]),
+  resolveValidation: withSuperAdmin(["admin", "hr"]),
+  markValidationVerified: withSuperAdmin(["admin", "hr"]),
+  escalateValidation: withSuperAdmin(["admin", "hr"]),
+  manageAlerts: withSuperAdmin(["admin", "supervisor", "hr", "ie"]),
+  exportAttendance: withSuperAdmin(["admin", "hr"]),
+  exportReports: withSuperAdmin(["admin", "supervisor", "hr", "viewer"]),
+  editSettings: withSuperAdmin(["admin"]),
+  addLineOutput: withSuperAdmin(["admin", "supervisor"]),
+  overrideAttendance: withSuperAdmin(["admin", "hr"]),
+  addWorkerNote: withSuperAdmin(["admin", "supervisor", "hr"]),
+  markException: withSuperAdmin(["admin", "supervisor", "hr"]),
+  viewAudit: withSuperAdmin(["admin"]),
 };
 
-export function canAccessRoute(role: UserRole, routeKey: AppRouteKey) {
-  return routePermissions[routeKey].includes(role);
+export const actionTitles: Record<AppAction, string> = {
+  manageRoleAccess: "Manage Role Access",
+  manageWorkers: "Manage Workers",
+  assignLine: "Assign Line",
+  transferLine: "Transfer Line",
+  resolveValidation: "Resolve Validation",
+  markValidationVerified: "Mark Validation Verified",
+  escalateValidation: "Escalate Validation",
+  manageAlerts: "Manage Alerts",
+  exportAttendance: "Export Attendance",
+  exportReports: "Export Reports",
+  editSettings: "Edit Settings",
+  addLineOutput: "Add Line Output",
+  overrideAttendance: "Override Attendance",
+  addWorkerNote: "Add Worker Note",
+  markException: "Mark Exception",
+  viewAudit: "View Audit",
+};
+
+function hasRoleAccess(role: UserRole, allowedRoles: UserRole[]) {
+  return role === "super_admin" || allowedRoles.includes(role);
 }
 
-export function canPerform(role: UserRole, action: AppAction) {
-  return actionPermissions[action].includes(role);
+export function canAccessRoute(
+  role: UserRole,
+  routeKey: AppRouteKey,
+  overrides?: Partial<Record<AppRouteKey, UserRole[]>>
+) {
+  return hasRoleAccess(role, overrides?.[routeKey] || routePermissions[routeKey]);
+}
+
+export function canPerform(
+  role: UserRole,
+  action: AppAction,
+  overrides?: Partial<Record<AppAction, UserRole[]>>
+) {
+  return hasRoleAccess(role, overrides?.[action] || actionPermissions[action]);
 }

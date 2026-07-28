@@ -278,6 +278,7 @@ function getInitials(name: string) {
 }
 
 function roleTitle(role: AppUser["role"]) {
+  if (role === "super_admin") return "Platform Super Administrator";
   if (role === "admin") return "Factory Systems Administrator";
   if (role === "supervisor") return "Floor Supervisor";
   if (role === "hr") return "HR Operations Lead";
@@ -286,6 +287,7 @@ function roleTitle(role: AppUser["role"]) {
 }
 
 function roleDepartment(role: AppUser["role"]) {
+  if (role === "super_admin") return "Platform Administration";
   if (role === "admin") return "Operations";
   if (role === "supervisor") return "Production";
   if (role === "hr") return "Human Resources";

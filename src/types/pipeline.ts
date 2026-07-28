@@ -1,4 +1,4 @@
-export const USER_ROLES = ["admin", "supervisor", "hr", "ie", "viewer"] as const;
+export const USER_ROLES = ["super_admin", "admin", "supervisor", "hr", "ie", "viewer"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
 export const SOURCE_TYPES = ["face", "fingerprint"] as const;
