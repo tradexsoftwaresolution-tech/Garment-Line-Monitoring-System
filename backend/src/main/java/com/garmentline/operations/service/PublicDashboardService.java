@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -37,7 +38,10 @@ public class PublicDashboardService {
     String attendanceDateText = attendanceDate.toString();
 
     List<JsonNode> employees =
-        rows(select("employees", Map.of("is_active", "eq.true"), "employee_code.asc", null));
+        rows(select("employees", Map.of("is_active", "eq.true"), "employee_code.asc", null))
+            .stream()
+            .filter(this::isOperationalEmployee)
+            .toList();
     List<JsonNode> employeeProfiles =
         rows(select("employee_profiles", Map.of(), null, null));
     List<JsonNode> productionLines =
@@ -487,11 +491,15 @@ public class PublicDashboardService {
             event -> {
               String eventEmployeeCode =
                   firstNonBlank(text(event, "employee_code"), text(event, "device_person_name"));
-              JsonNode matchedEmployee = employeesByIdentifier.get(normalizePin(eventEmployeeCode));
+              boolean authenticationFailed = isAuthenticationFailedEvent(event);
+              JsonNode matchedEmployee =
+                  authenticationFailed ? null : employeesByIdentifier.get(normalizePin(eventEmployeeCode));
+              String storedMatchStatus = text(event, "match_status");
               boolean matched =
-                  matchedEmployee != null
-                      || "matched".equals(text(event, "match_status"))
-                      || hasText(text(event, "employee_id"));
+                  !authenticationFailed
+                      && ("matched".equals(storedMatchStatus)
+                          || hasText(text(event, "employee_id"))
+                          || (matchedEmployee != null && !hasText(storedMatchStatus)));
               String matchStatus =
                   matched ? "matched" : firstNonBlank(text(event, "match_status"), "unmatched");
               Map<String, Object> value = new LinkedHashMap<>();
@@ -520,6 +528,19 @@ public class PublicDashboardService {
               value.put("gate", firstNonBlank(text(event, "camera_name"), text(event, "camera_location"), "Hikvision Face"));
               value.put("confidence", matched ? 96 : 0);
               value.put("outcome", matched ? "matched" : "unknown");
+              if (hasText(text(event, "verify_mode"))) {
+                value.put("verifyMode", text(event, "verify_mode"));
+              }
+              if (hasText(text(event, "attendance_status"))) {
+                value.put("attendanceStatus", text(event, "attendance_status"));
+              }
+              if (hasText(text(event, "access_decision"))) {
+                value.put("accessDecision", text(event, "access_decision"));
+              }
+              JsonNode rawPayload = event.get("raw_payload");
+              if (rawPayload != null && !rawPayload.isNull()) {
+                value.put("rawPayload", rawPayload);
+              }
               if (hasText(text(event, "picture_url"))) {
                 value.put("pictureUrl", text(event, "picture_url"));
               } else if (hasText(text(event, "visible_light_pic_url"))) {
@@ -664,6 +685,28 @@ public class PublicDashboardService {
 
   private String text(JsonNode node, String field) {
     return JsonSupport.text(node, field);
+  }
+
+  private boolean isOperationalEmployee(JsonNode employee) {
+    String status = firstNonBlank(text(employee, "employment_status"), "active");
+    return "active".equalsIgnoreCase(status.trim());
+  }
+
+  private boolean isAuthenticationFailedEvent(JsonNode event) {
+    String text = event == null ? "" : event.toString().toLowerCase(Locale.ROOT);
+    String compact = text.replace(" ", "").replace("_", "").replace("-", "");
+    return text.contains("authentication failed")
+        || text.contains("authentication failure")
+        || text.contains("auth failed")
+        || text.contains("verify failed")
+        || text.contains("verification failed")
+        || text.contains("face failed")
+        || compact.contains("authenticationfailed")
+        || compact.contains("authenticationfailure")
+        || compact.contains("authfailed")
+        || compact.contains("verifyfailed")
+        || compact.contains("verificationfailed")
+        || compact.contains("facefailed");
   }
 
   private Integer integer(JsonNode node, String field) {

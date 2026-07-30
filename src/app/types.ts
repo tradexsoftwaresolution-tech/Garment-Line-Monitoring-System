@@ -49,9 +49,12 @@ export interface DepartmentRecord {
   activeEmployees: number;
 }
 
+export type EmployeeType = "permanent" | "new_joiner" | "intern";
+
 export interface WorkerProfile {
   id: string;
   employeeId: string;
+  employeeType?: EmployeeType;
   epfNo?: string;
   fullName: string;
   photoUrl?: string;
@@ -163,6 +166,10 @@ export interface FaceEvent {
   confidence: number;
   outcome: "matched" | "unknown" | "duplicate";
   pictureUrl?: string;
+  verifyMode?: string;
+  attendanceStatus?: string;
+  accessDecision?: string;
+  rawPayload?: Record<string, unknown>;
 }
 
 export interface FingerprintEvent {

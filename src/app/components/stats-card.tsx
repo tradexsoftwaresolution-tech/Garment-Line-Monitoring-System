@@ -21,8 +21,8 @@ export function StatsCard({
   icon: Icon,
   trend,
   iconBgColor = "#DBEAFE",
-  iconColor = "#2563EB",
-  accentColor = "#2563EB",
+  iconColor = "#263574",
+  accentColor = "#263574",
   subtitle,
 }: StatsCardProps) {
   return (

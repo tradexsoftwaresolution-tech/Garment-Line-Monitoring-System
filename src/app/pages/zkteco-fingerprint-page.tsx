@@ -175,8 +175,8 @@ export function ZktecoFingerprintPage() {
           value={receiverOk === false ? "Failed" : receiverOk ? "Reachable" : "Ready"}
           meta={backendConfigured ? `${backendEnv.url}/iclock` : "Backend URL missing"}
           icon={Server}
-          accent={receiverOk === false ? "#d92d20" : "#0a84ff"}
-          soft={receiverOk === false ? "rgba(255, 59, 48, 0.14)" : "rgba(10, 132, 255, 0.14)"}
+          accent={receiverOk === false ? "#d92d20" : "#263574"}
+          soft={receiverOk === false ? "rgba(255, 59, 48, 0.14)" : "rgba(38, 53, 116, 0.14)"}
         />
         <KpiCard
           label="Machines Seen"

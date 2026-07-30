@@ -2,6 +2,10 @@ import {
   hasFaceAttendance,
   hasFingerprintAttendance,
 } from "./attendance-reporting";
+import {
+  currentAttendanceDateKey,
+  isDateKeyInAttendanceDay,
+} from "./alert-dates";
 import type {
   AlertRecord,
   AttendanceOverview,
@@ -680,7 +684,15 @@ export function downloadFullAttendanceWordReport(input: AttendanceWordReportInpu
   const unmatchedFingerprintEvents = rawFingerprintEvents.filter(
     (event) => event.match_status !== "matched"
   );
-  const activeAlerts = input.alerts.filter((alert) => alert.status !== "Resolved");
+  const activeAlertDate =
+    input.attendanceOverview.attendanceDate ||
+    input.fingerprintDeviceSummary.attendanceDate ||
+    currentAttendanceDateKey();
+  const activeAlerts = input.alerts.filter(
+    (alert) =>
+      alert.status !== "Resolved" &&
+      isDateKeyInAttendanceDay(alert.createdAt, activeAlertDate)
+  );
 
   const summaryRows = [
     ["Attendance date", input.attendanceOverview.attendanceDate || input.fingerprintDeviceSummary.attendanceDate || ""],

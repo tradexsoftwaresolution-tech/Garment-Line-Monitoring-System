@@ -17,6 +17,7 @@ import {
   assignWorkerToLine,
   createDepartmentRecord,
   createWorkerProfile,
+  convertWorkerToPermanentProfile,
   deactivateDepartmentRecord,
   getOperationsSnapshot,
   markWorkerException,
@@ -143,6 +144,13 @@ type OperationsContextValue = OperationsSnapshot & {
   updateWorkerHrDetails: (
     args: WorkerHrDetailsInput & { workerId: string; actor: string }
   ) => Promise<OperationsActionResult>;
+  convertWorkerToPermanent: (args: {
+    workerId: string;
+    epfNo: string;
+    effectiveDate?: string | null;
+    hrNotes?: string | null;
+    actor: string;
+  }) => Promise<OperationsActionResult>;
   resignWorker: (args: {
     workerId: string;
     resignedAt: string;
@@ -717,6 +725,13 @@ export function OperationsProvider({ children }: { children: ReactNode }) {
       updateWorkerHrDetails: async ({ workerId, actor, ...details }) =>
         withClient((client) =>
           updateWorkerHrDetails(client, {
+            employeeId: workerId,
+            ...details,
+          })
+        ),
+      convertWorkerToPermanent: async ({ workerId, actor, ...details }) =>
+        withClient((client) =>
+          convertWorkerToPermanentProfile(client, {
             employeeId: workerId,
             ...details,
           })

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+const clientLogoSrc = "/brand/union-north-logo.png";
+
 // ─── Inline SVG icons ─────────────────────────────────────────────────────────
 function IconSearch() {
   return (
@@ -51,7 +53,7 @@ export function DashboardHeader() {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'DM Sans', system-ui, sans-serif; background: #F5F6F8; color: #111318; }
         @keyframes glpulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-        .header-search:focus { outline: none; border-color: #2563EB !important; background: #FFFFFF !important; }
+        .header-search:focus { outline: none; border-color: #263574 !important; background: #FFFFFF !important; }
         .header-bell:hover { background: #F5F6F8 !important; }
       `}</style>
 
@@ -60,8 +62,19 @@ export function DashboardHeader() {
 
           {/* ── Left: branding + date ── */}
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <img
+              src={clientLogoSrc}
+              alt=""
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: "50%",
+                objectFit: "cover",
+                boxShadow: "0 12px 22px rgba(38, 53, 116, 0.18)",
+              }}
+            />
             <div style={{ fontSize: 15, fontWeight: 600, color: "#111318", letterSpacing: "-0.2px", whiteSpace: "nowrap" }}>
-              Line<span style={{ color: "#2563EB" }}>Matrix</span> — Operations Centre
+              Line<span style={{ color: "#263574" }}>Matrix</span> — Operations Centre
             </div>
             <div style={{ width: 1, height: 20, background: "#CACDD8", flexShrink: 0 }} />
             <div style={{ fontSize: 12, color: "#8B90A0", whiteSpace: "nowrap" }}>{dateStr}</div>
@@ -112,7 +125,7 @@ export function DashboardHeader() {
                 <div style={{ fontSize: 13, fontWeight: 600, color: "#111318", lineHeight: 1.3 }}>Supervisor</div>
                 <div style={{ fontSize: 11, color: "#8B90A0" }}>Production Manager</div>
               </div>
-              <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#2563EB", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#263574", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <IconUser />
               </div>
             </div>

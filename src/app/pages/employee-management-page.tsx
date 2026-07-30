@@ -23,12 +23,13 @@ import {
   StatusBadge,
   WorkerChip,
 } from "../components/ops-ui";
-import type { DepartmentRecord, WorkerProfile } from "../types";
+import type { DepartmentRecord, EmployeeType, WorkerProfile } from "../types";
 
 const EMPLOYEE_MANAGEMENT_PAGE_SIZE = 50;
 
 type EmployeeFormState = {
   employeeCode: string;
+  employeeType: EmployeeType;
   epfNo: string;
   fullName: string;
   departmentId: string;
@@ -61,36 +62,191 @@ type EmploymentStatusFormState = {
   hrNotes: string;
 };
 
+type PermanentConversionFormState = {
+  epfNo: string;
+  effectiveDate: string;
+  hrNotes: string;
+};
+
 type EmploymentStatusFilter = "All" | "active" | "inactive" | "resigned";
+type EmployeeTypeFilter = "All" | EmployeeType;
+
+const EMPLOYEE_TYPE_OPTIONS: Array<{
+  value: EmployeeType;
+  label: string;
+  keyLabel: string;
+  helper: string;
+}> = [
+  {
+    value: "permanent",
+    label: "Permanent",
+    keyLabel: "EPF / employee number",
+    helper: "Permanent employees use their EPF number as the employee number.",
+  },
+  {
+    value: "new_joiner",
+    label: "New joiner",
+    keyLabel: "New joiner key",
+    helper: "Manual unique key must start with 101.",
+  },
+  {
+    value: "intern",
+    label: "Intern",
+    keyLabel: "Intern key",
+    helper: "Manual unique key must start with 303.",
+  },
+];
 
 const DESIGNATION_OPTIONS = [
-  "Machine Operator",
-  "Production Helper",
-  "Production Supervisor",
-  "Quality Supervisor",
-  "Piping Operator",
-  "Marker Maker-CAD",
-  "Packing Operator",
-  "Cutting Operator",
-  "Helper",
-  "Team Member",
-  "Store Keeper",
-  "Mechanic",
-  "Sample Operator",
+  "ADMIN ASSISTANT",
+  "ASSISTANT IE MANAGER",
+  "ASSISTANT MANAGER -PLANT ENGENEER",
+  "ASSISTANT MERCHANDISER",
+  "ASSISTANT STORES MANAGER",
+  "BAND KNIFE CUTTER - D",
+  "BOARD CUTTER",
+  "CHEF",
+  "CHIEF MECHANIC",
+  "CUTTER - B",
+  "CUTTING MANAGER",
+  "DRIVER",
+  "ELECTRICIAN",
+  "ENGINEERING ASSISTANT",
+  "FABRIC INSPECTOR",
+  "FINAL CHECKER",
+  "FINAL QUALITY CHECKER",
+  "FINANCE MANAGER",
+  "FINISH BOARD MAKER",
+  "FINISH GOOD RECORDER",
+  "FINISHING IRONER",
+  "FINISHING MANAGER",
+  "FINISHING WAREHOUSE ASSISTANT",
+  "GENARAL MANAGER",
+  "HEAD OF THE MQL",
+  "HEAD OF THE PLANING",
+  "HR ASSISTANT",
+  "HR MANAGER",
+  "IE OFFICER",
+  "IN PUT RECORDER",
+  "INPUT RECORDER",
+  "LAB ASSISTANT",
+  "LAYER PLAN ASSISTANT",
+  "LECTRA CUTTER - A",
+  "LECTRA CUTTER - B",
+  "LINE IRONER",
+  "MAQ ASSISTANT",
+  "MARKER MAKER",
+  "MECHANIC",
+  "MERCHANDISING ASSISTANT",
+  "NEEDLE RECODER",
+  "NURSE",
+  "PIPING OPERATOR - B",
+  "PIPING OPERATOR - C",
+  "PLANING ASSISTANT",
+  "PLANT MAINTENANCE MACHANIC",
+  "PRODUCTION MANAGER",
+  "PRODUCTION SUPERVISOR",
+  "PRODUCTION SUPERVISOR - A",
+  "PRODUCTION SUPERVISOR - B",
+  "PRODUCTION SUPERVISOR - C",
+  "PRODUCTION SUPERVISOR B",
+  "PRODUCTION SUPERVISOR C",
+  "PRODUCTION TECHNICIAN",
+  "PURCHASING OFFICER",
+  "QA AUDITOR",
+  "QC -CUTTING",
+  "QUALITY CHECKER",
+  "QUALITY MANAGER",
+  "QUALITY SUPERVISOR",
+  "RECORDER",
+  "SAMPLE CHECKER",
+  "SAMPLE CUTTER",
+  "SAMPLE MACHINE OPERATOR",
+  "SAMPLE MACHINE OPERATOR - A",
+  "SAMPLE MACHINE OPERATOR - B",
+  "SAMPLE MACHINE OPERATOR - C",
+  "SAMPLE MACHINE OPERATOR A",
+  "SAMPLE MACHINE OPERATOR C",
+  "SENIOR CHEF",
+  "SENIOR MARKER MAKER",
+  "SENIOR MERCHANDISER",
+  "SPREADER OPERATOR - C",
+  "STORES ASSISTANT",
+  "T/FINAL QUALITY CHECKER",
+  "T/PRODUCTION TECHNICIAN",
+  "TEAM MEMBER",
+  "TEAM MEMBER - A",
+  "TEAM MEMBER - A+",
+  "TEAM MEMBER - B",
+  "TEAM MEMBER - C",
+  "TEAM MEMBER - D",
+  "TEAM MEMBER - JUMPER",
+  "TEAM MEMBER A",
+  "TEAM MEMBER A+",
+  "TEAM MEMBER B",
+  "TEAM MEMBER C",
+  "TEAM MEMBER D",
+  "TEAM MEMBER T/L",
+  "TECHNICAL MANAGER",
+  "TRAINEE ASSISTANT MERCHANDISER",
+  "TRAINEE FINAL CHECKER",
+  "TRAINEE IE OFFICER",
+  "TRAINEE MECHANIC",
+  "TRAINEE PRODUCTION SUPERVISOR",
+  "TRAINEE QUALITY CHECKER",
+  "TRAINEE QUALITY SUPERVISOR",
+  "TRAINING INSTRUCTOR",
+  "WORK STUDY RECORDER",
 ];
+const CUSTOM_DESIGNATION_OPTION = "__custom_designation__";
 
 function todayInputValue() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function employeeTypeLabel(value?: EmployeeType) {
+  return EMPLOYEE_TYPE_OPTIONS.find((item) => item.value === value)?.label || "Permanent";
+}
+
+function employeeTypeFromWorker(worker: WorkerProfile): EmployeeType {
+  if (worker.employeeType) return worker.employeeType;
+  if (worker.employeeId.startsWith("101")) return "new_joiner";
+  if (worker.employeeId.startsWith("303")) return "intern";
+  return "permanent";
+}
+
+function employeeTypeKeyLabel(value: EmployeeType) {
+  return (
+    EMPLOYEE_TYPE_OPTIONS.find((item) => item.value === value)?.keyLabel ||
+    "Employee number"
+  );
+}
+
+function employeeTypeHelper(value: EmployeeType) {
+  return EMPLOYEE_TYPE_OPTIONS.find((item) => item.value === value)?.helper || "";
+}
+
+function validateEmployeeTypeKey(form: EmployeeFormState) {
+  const employeeCode = form.employeeCode.trim().replace(/\s+/g, "");
+  if (!employeeCode) return "Employee number is required.";
+  if (form.employeeType === "new_joiner" && !employeeCode.startsWith("101")) {
+    return "New joiner unique key must start with 101.";
+  }
+  if (form.employeeType === "intern" && !employeeCode.startsWith("303")) {
+    return "Intern unique key must start with 303.";
+  }
+  return null;
+}
+
 function createEmptyEmployeeForm(): EmployeeFormState {
   return {
     employeeCode: "",
+    employeeType: "permanent",
     epfNo: "",
     fullName: "",
     departmentId: "",
     department: "PRODUCTION",
-    roleTitle: "Machine Operator",
+    roleTitle: DESIGNATION_OPTIONS[0] || "",
     phone: "",
     shift: "Shift A",
     hireDate: todayInputValue(),
@@ -100,9 +256,11 @@ function createEmptyEmployeeForm(): EmployeeFormState {
 }
 
 function workerToEmployeeForm(worker: WorkerProfile): EmployeeFormState {
+  const employeeType = employeeTypeFromWorker(worker);
   return {
     employeeCode: worker.employeeId,
-    epfNo: worker.epfNo || "",
+    employeeType,
+    epfNo: employeeType === "permanent" ? worker.employeeId : worker.epfNo || "",
     fullName: worker.fullName,
     departmentId: worker.departmentId || "",
     department: worker.department,
@@ -165,6 +323,7 @@ export function EmployeeManagementPage() {
     deleteDepartment,
     createWorker,
     updateWorkerHrDetails,
+    convertWorkerToPermanent,
     resignWorker,
     updateWorkerEmploymentStatus,
   } = useOperations();
@@ -172,12 +331,14 @@ export function EmployeeManagementPage() {
   const [department, setDepartment] = useState("All");
   const [employmentStatusFilter, setEmploymentStatusFilter] =
     useState<EmploymentStatusFilter>("All");
+  const [employeeTypeFilter, setEmployeeTypeFilter] = useState<EmployeeTypeFilter>("All");
   const [page, setPage] = useState(1);
   const [drawerMode, setDrawerMode] = useState<
-    "create" | "edit" | "resign" | "status" | "departments" | null
+    "create" | "edit" | "resign" | "status" | "departments" | "promote" | null
   >(null);
   const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null);
   const [employeeForm, setEmployeeForm] = useState<EmployeeFormState>(createEmptyEmployeeForm);
+  const [isCustomDesignation, setIsCustomDesignation] = useState(false);
   const [departmentForm, setDepartmentForm] =
     useState<DepartmentFormState>(createEmptyDepartmentForm);
   const [resignationForm, setResignationForm] = useState<ResignationFormState>({
@@ -189,6 +350,12 @@ export function EmployeeManagementPage() {
     useState<EmploymentStatusFormState>({
       status: "inactive",
       reason: "",
+      hrNotes: "",
+    });
+  const [permanentConversionForm, setPermanentConversionForm] =
+    useState<PermanentConversionFormState>({
+      epfNo: "",
+      effectiveDate: todayInputValue(),
       hrNotes: "",
     });
   const [saving, setSaving] = useState(false);
@@ -207,6 +374,18 @@ export function EmployeeManagementPage() {
   const resignedWorkers = useMemo(
     () => rosterWorkers.filter((worker) => normalizedEmploymentStatus(worker) === "resigned"),
     [rosterWorkers]
+  );
+  const permanentWorkers = useMemo(
+    () => activeWorkers.filter((worker) => employeeTypeFromWorker(worker) === "permanent"),
+    [activeWorkers]
+  );
+  const newJoinerWorkers = useMemo(
+    () => activeWorkers.filter((worker) => employeeTypeFromWorker(worker) === "new_joiner"),
+    [activeWorkers]
+  );
+  const internWorkers = useMemo(
+    () => activeWorkers.filter((worker) => employeeTypeFromWorker(worker) === "intern"),
+    [activeWorkers]
   );
   const derivedDepartmentNames = useMemo(
     () =>
@@ -261,14 +440,17 @@ export function EmployeeManagementPage() {
           (worker.epfNo || "").toLowerCase().includes(query) ||
           worker.roleTitle.toLowerCase().includes(query) ||
           worker.department.toLowerCase().includes(query) ||
+          employeeTypeLabel(employeeTypeFromWorker(worker)).toLowerCase().includes(query) ||
           (line?.name || "").toLowerCase().includes(query);
         const matchesDepartment = department === "All" || worker.department === department;
         const matchesEmploymentStatus =
           employmentStatusFilter === "All" ||
           normalizedEmploymentStatus(worker) === employmentStatusFilter;
-        return matchesQuery && matchesDepartment && matchesEmploymentStatus;
+        const matchesEmployeeType =
+          employeeTypeFilter === "All" || employeeTypeFromWorker(worker) === employeeTypeFilter;
+        return matchesQuery && matchesDepartment && matchesEmploymentStatus && matchesEmployeeType;
       }),
-    [department, employmentStatusFilter, lines, rosterWorkers, search]
+    [department, employeeTypeFilter, employmentStatusFilter, lines, rosterWorkers, search]
   );
 
   const totalPages = Math.max(1, Math.ceil(filteredWorkers.length / EMPLOYEE_MANAGEMENT_PAGE_SIZE));
@@ -280,13 +462,18 @@ export function EmployeeManagementPage() {
     filteredWorkers.length === 0 ? 0 : (page - 1) * EMPLOYEE_MANAGEMENT_PAGE_SIZE + 1;
   const employeeEnd = Math.min(page * EMPLOYEE_MANAGEMENT_PAGE_SIZE, filteredWorkers.length);
   const assignedWorkers = activeWorkers.filter((worker) => worker.currentLineId).length;
-  const workersMissingCoreDetails = rosterWorkers.filter(
-    (worker) => !worker.epfNo || !worker.phone || worker.phone === "Not set"
-  ).length;
+  const workersMissingCoreDetails = activeWorkers.filter((worker) => {
+    const employeeType = employeeTypeFromWorker(worker);
+    return (
+      (employeeType === "permanent" && !worker.epfNo) ||
+      !worker.phone ||
+      worker.phone === "Not set"
+    );
+  }).length;
 
   useEffect(() => {
     setPage(1);
-  }, [department, employmentStatusFilter, search]);
+  }, [department, employeeTypeFilter, employmentStatusFilter, search]);
 
   useEffect(() => {
     setPage((current) => Math.min(current, totalPages));
@@ -296,11 +483,13 @@ export function EmployeeManagementPage() {
     setDrawerMode(null);
     setSelectedWorkerId(null);
     setSaving(false);
+    setIsCustomDesignation(false);
   };
 
   const openCreateDrawer = () => {
     setFeedback(null);
     setSelectedWorkerId(null);
+    setIsCustomDesignation(false);
     const defaultDepartment = activeDepartmentOptions[0];
     setEmployeeForm({
       ...createEmptyEmployeeForm(),
@@ -319,7 +508,9 @@ export function EmployeeManagementPage() {
   const openEditDrawer = (worker: WorkerProfile) => {
     setFeedback(null);
     setSelectedWorkerId(worker.id);
-    setEmployeeForm(workerToEmployeeForm(worker));
+    const form = workerToEmployeeForm(worker);
+    setEmployeeForm(form);
+    setIsCustomDesignation(Boolean(form.roleTitle && !designationOptions.includes(form.roleTitle)));
     setDrawerMode("edit");
   };
 
@@ -345,11 +536,48 @@ export function EmployeeManagementPage() {
     setDrawerMode("status");
   };
 
+  const openPermanentConversionDrawer = (worker: WorkerProfile) => {
+    setFeedback(null);
+    setSelectedWorkerId(worker.id);
+    setPermanentConversionForm({
+      epfNo: worker.epfNo || "",
+      effectiveDate: todayInputValue(),
+      hrNotes: "",
+    });
+    setDrawerMode("promote");
+  };
+
   const updateEmployeeForm = <K extends keyof EmployeeFormState>(
     key: K,
     value: EmployeeFormState[K]
   ) => {
-    setEmployeeForm((current) => ({ ...current, [key]: value }));
+    setEmployeeForm((current) => {
+      if (key === "employeeCode") {
+        const nextEmployeeCode = String(value).trim().replace(/\s+/g, "");
+        return {
+          ...current,
+          employeeCode: String(value),
+          epfNo: current.employeeType === "permanent" ? nextEmployeeCode : current.epfNo,
+        };
+      }
+
+      if (key === "epfNo" && current.employeeType === "permanent") {
+        return current;
+      }
+
+      return { ...current, [key]: value };
+    });
+  };
+
+  const selectEmployeeType = (value: EmployeeType) => {
+    setEmployeeForm((current) => {
+      const employeeCode = current.employeeCode.trim().replace(/\s+/g, "");
+      return {
+        ...current,
+        employeeType: value,
+        epfNo: value === "permanent" ? employeeCode : current.epfNo,
+      };
+    });
   };
 
   const selectDepartmentForEmployee = (value: string) => {
@@ -364,6 +592,20 @@ export function EmployeeManagementPage() {
       departmentId: persistedDepartment ? selectedDepartment?.id || "" : "",
       department: selectedDepartment?.name || value,
     }));
+  };
+
+  const selectDesignationForEmployee = (value: string) => {
+    if (value === CUSTOM_DESIGNATION_OPTION) {
+      setIsCustomDesignation(true);
+      setEmployeeForm((current) => ({
+        ...current,
+        roleTitle: designationOptions.includes(current.roleTitle) ? "" : current.roleTitle,
+      }));
+      return;
+    }
+
+    setIsCustomDesignation(false);
+    updateEmployeeForm("roleTitle", value);
   };
 
   const updateDepartmentForm = <K extends keyof DepartmentFormState>(
@@ -441,19 +683,100 @@ export function EmployeeManagementPage() {
   };
 
   const saveEmployee = async () => {
+    const keyValidationMessage = validateEmployeeTypeKey(employeeForm);
+    if (keyValidationMessage) {
+      setFeedback(keyValidationMessage);
+      return;
+    }
+
+    if (
+      drawerMode === "edit" &&
+      selectedWorker &&
+      employeeTypeFromWorker(selectedWorker) !== employeeForm.employeeType
+    ) {
+      setFeedback("Use Make Permanent to change a new joiner or intern into a permanent employee.");
+      return;
+    }
+
+    const employeeCode = employeeForm.employeeCode.trim().replace(/\s+/g, "");
+    const roleTitle = employeeForm.roleTitle.trim();
+    if (!roleTitle) {
+      setFeedback("Designation / role is required.");
+      return;
+    }
+
+    const normalizedEmployeeForm = {
+      ...employeeForm,
+      employeeCode,
+      roleTitle,
+      epfNo:
+        employeeForm.employeeType === "permanent"
+          ? employeeCode
+          : employeeForm.epfNo.trim().replace(/\s+/g, ""),
+    };
+
     setSaving(true);
     try {
       const result =
         drawerMode === "edit" && selectedWorker
           ? await updateWorkerHrDetails({
               workerId: selectedWorker.id,
-              ...employeeForm,
+              ...normalizedEmployeeForm,
               actor: currentUser.name,
             })
           : await createWorker({
-              ...employeeForm,
+              ...normalizedEmployeeForm,
               actor: currentUser.name,
             });
+
+      setFeedback(result.message);
+      if (result.ok) {
+        closeDrawer();
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const savePermanentConversion = async () => {
+    if (!selectedWorker) return;
+    const epfNo = permanentConversionForm.epfNo.trim().replace(/\s+/g, "");
+    const currentEmployeeType = employeeTypeFromWorker(selectedWorker);
+
+    if (currentEmployeeType === "permanent") {
+      setFeedback("This employee is already permanent.");
+      return;
+    }
+
+    if (!epfNo) {
+      setFeedback("Official EPF number is required before converting to permanent.");
+      return;
+    }
+
+    const duplicateEmployee = rosterWorkers.find((worker) => {
+      if (worker.id === selectedWorker.id) return false;
+      return worker.employeeId === epfNo || worker.epfNo === epfNo;
+    });
+
+    if (duplicateEmployee) {
+      setFeedback(
+        `EPF ${epfNo} is already linked to ${duplicateEmployee.fullName} (${duplicateEmployee.employeeId}).`
+      );
+      return;
+    }
+
+    const effectiveDate = permanentConversionForm.effectiveDate || todayInputValue();
+    const hrNotes = permanentConversionForm.hrNotes.trim();
+
+    setSaving(true);
+    try {
+      const result = await convertWorkerToPermanent({
+        workerId: selectedWorker.id,
+        epfNo,
+        effectiveDate,
+        hrNotes,
+        actor: currentUser.name,
+      });
 
       setFeedback(result.message);
       if (result.ok) {
@@ -573,6 +896,30 @@ export function EmployeeManagementPage() {
           soft="var(--ops-success-soft)"
         />
         <KpiCard
+          label="Permanent"
+          value={`${permanentWorkers.length}`}
+          meta="EPF number is used as the employee number."
+          icon={UserCheck}
+          accent="var(--ops-primary)"
+          soft="var(--ops-primary-soft)"
+        />
+        <KpiCard
+          label="New Joiners"
+          value={`${newJoinerWorkers.length}`}
+          meta="Manual unique keys start with 101."
+          icon={UserPlus}
+          accent="var(--ops-success)"
+          soft="var(--ops-success-soft)"
+        />
+        <KpiCard
+          label="Interns"
+          value={`${internWorkers.length}`}
+          meta="Manual unique keys start with 303."
+          icon={Users}
+          accent="var(--ops-violet)"
+          soft="var(--ops-violet-soft)"
+        />
+        <KpiCard
           label="Inactive"
           value={`${inactiveWorkers.length}`}
           meta="Employees temporarily removed from active counts and assignments."
@@ -618,6 +965,19 @@ export function EmployeeManagementPage() {
         </select>
         <select
           className="ops-select"
+          style={{ flex: "0 0 190px" }}
+          value={employeeTypeFilter}
+          onChange={(event) => setEmployeeTypeFilter(event.target.value as EmployeeTypeFilter)}
+        >
+          <option value="All">All employee types</option>
+          {EMPLOYEE_TYPE_OPTIONS.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+        <select
+          className="ops-select"
           style={{ flex: "0 0 180px" }}
           value={employmentStatusFilter}
           onChange={(event) =>
@@ -637,6 +997,7 @@ export function EmployeeManagementPage() {
             <thead>
               <tr>
                 <th>Employee</th>
+                <th>Type / Key</th>
                 <th>EPF / Phone</th>
                 <th>Department / Role</th>
                 <th>Current Line</th>
@@ -646,69 +1007,88 @@ export function EmployeeManagementPage() {
               </tr>
             </thead>
             <tbody>
-              {pagedWorkers.map((worker) => (
-                <tr key={worker.id}>
-                  <td>
-                    <WorkerChip
-                      worker={worker}
-                      meta={<div className="ops-row-subtitle">{worker.employeeId}</div>}
-                    />
-                  </td>
-                  <td>
-                    <div className="ops-row-title">{worker.epfNo || "No EPF"}</div>
-                    <div className="ops-row-subtitle">{worker.phone}</div>
-                  </td>
-                  <td>
-                    <div className="ops-row-title">{worker.department}</div>
-                    <div className="ops-row-subtitle">{worker.roleTitle}</div>
-                  </td>
-                  <td>{findLine(lines, worker.currentLineId)?.name || "Unassigned"}</td>
-                  <td>{worker.shift}</td>
-                  <td>
-                    <StatusBadge label={employmentLabel(worker)} tone={employmentTone(worker)} />
-                  </td>
-                  <td>
-                    <div className="ops-row-actions">
-                      <Link to={`/workers/${worker.id}`} className="ops-link-button">
-                        Profile
-                      </Link>
-                      <button
-                        type="button"
-                        className="ops-link-button"
-                        onClick={() => openEditDrawer(worker)}
-                      >
-                        Edit HR
-                      </button>
-                      {normalizedEmploymentStatus(worker) === "inactive" ? (
+              {pagedWorkers.map((worker) => {
+                const employeeType = employeeTypeFromWorker(worker);
+                return (
+                  <tr key={worker.id}>
+                    <td>
+                      <WorkerChip
+                        worker={worker}
+                        meta={<div className="ops-row-subtitle">{worker.employeeId}</div>}
+                      />
+                    </td>
+                    <td>
+                      <div className="ops-row-title">{employeeTypeLabel(employeeType)}</div>
+                      <div className="ops-row-subtitle">{worker.employeeId}</div>
+                    </td>
+                    <td>
+                      <div className="ops-row-title">
+                        {worker.epfNo || (employeeType === "permanent" ? worker.employeeId : "No EPF")}
+                      </div>
+                      <div className="ops-row-subtitle">{worker.phone}</div>
+                    </td>
+                    <td>
+                      <div className="ops-row-title">{worker.department}</div>
+                      <div className="ops-row-subtitle">{worker.roleTitle}</div>
+                    </td>
+                    <td>{findLine(lines, worker.currentLineId)?.name || "Unassigned"}</td>
+                    <td>{worker.shift}</td>
+                    <td>
+                      <StatusBadge label={employmentLabel(worker)} tone={employmentTone(worker)} />
+                    </td>
+                    <td>
+                      <div className="ops-row-actions">
+                        <Link to={`/workers/${worker.id}`} className="ops-link-button">
+                          Profile
+                        </Link>
                         <button
                           type="button"
                           className="ops-link-button"
-                          onClick={() => openStatusDrawer(worker, "active")}
+                          onClick={() => openEditDrawer(worker)}
                         >
-                          Activate
+                          Edit HR
                         </button>
-                      ) : normalizedEmploymentStatus(worker) !== "resigned" ? (
-                        <button
-                          type="button"
-                          className="ops-link-button"
-                          onClick={() => openStatusDrawer(worker, "inactive")}
-                        >
-                          Mark Inactive
-                        </button>
-                      ) : null}
-                      {normalizedEmploymentStatus(worker) !== "resigned" ? (
-                        <button
-                          type="button"
-                          className="ops-link-button"
-                          onClick={() => openResignDrawer(worker)}
-                        >
-                          Resign
-                        </button>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        {employeeType !== "permanent" &&
+                        normalizedEmploymentStatus(worker) !== "resigned" ? (
+                          <button
+                            type="button"
+                            className="ops-link-button"
+                            onClick={() => openPermanentConversionDrawer(worker)}
+                          >
+                            Make Permanent
+                          </button>
+                        ) : null}
+                        {normalizedEmploymentStatus(worker) === "inactive" ? (
+                          <button
+                            type="button"
+                            className="ops-link-button"
+                            onClick={() => openStatusDrawer(worker, "active")}
+                          >
+                            Activate
+                          </button>
+                        ) : normalizedEmploymentStatus(worker) !== "resigned" ? (
+                          <button
+                            type="button"
+                            className="ops-link-button"
+                            onClick={() => openStatusDrawer(worker, "inactive")}
+                          >
+                            Mark Inactive
+                          </button>
+                        ) : null}
+                        {normalizedEmploymentStatus(worker) !== "resigned" ? (
+                          <button
+                            type="button"
+                            className="ops-link-button"
+                            onClick={() => openResignDrawer(worker)}
+                          >
+                            Resign
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -763,21 +1143,59 @@ export function EmployeeManagementPage() {
       >
         <div className="ops-grid cols-2">
           <label className="ops-form-field">
-            <span className="ops-filter-label">Employee number</span>
+            <span className="ops-filter-label">Employee type</span>
+            <select
+              className="ops-select"
+              value={employeeForm.employeeType}
+              onChange={(event) => selectEmployeeType(event.target.value as EmployeeType)}
+              disabled={drawerMode === "edit"}
+            >
+              {EMPLOYEE_TYPE_OPTIONS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            {drawerMode === "edit" && selectedWorker ? (
+              <span className="ops-row-subtitle">
+                Use Make Permanent to convert new joiners or interns after an EPF number is issued.
+              </span>
+            ) : null}
+          </label>
+          <label className="ops-form-field">
+            <span className="ops-filter-label">
+              {employeeTypeKeyLabel(employeeForm.employeeType)}
+            </span>
             <input
               className="ops-input"
               value={employeeForm.employeeCode}
               onChange={(event) => updateEmployeeForm("employeeCode", event.target.value)}
-              placeholder="e.g. 22541"
+              placeholder={
+                employeeForm.employeeType === "new_joiner"
+                  ? "e.g. 101001"
+                  : employeeForm.employeeType === "intern"
+                    ? "e.g. 303001"
+                    : "e.g. 22541"
+              }
             />
+            <span className="ops-row-subtitle">{employeeTypeHelper(employeeForm.employeeType)}</span>
           </label>
           <label className="ops-form-field">
             <span className="ops-filter-label">EPF number</span>
             <input
               className="ops-input"
-              value={employeeForm.epfNo}
+              value={
+                employeeForm.employeeType === "permanent"
+                  ? employeeForm.employeeCode.trim().replace(/\s+/g, "")
+                  : employeeForm.epfNo
+              }
               onChange={(event) => updateEmployeeForm("epfNo", event.target.value)}
-              placeholder="Optional"
+              placeholder={
+                employeeForm.employeeType === "permanent"
+                  ? "Same as employee number"
+                  : "Optional"
+              }
+              disabled={employeeForm.employeeType === "permanent"}
             />
           </label>
           <label className="ops-form-field">
@@ -816,18 +1234,31 @@ export function EmployeeManagementPage() {
             <span className="ops-filter-label">Designation / role</span>
             <select
               className="ops-select"
-              value={employeeForm.roleTitle}
-              onChange={(event) => updateEmployeeForm("roleTitle", event.target.value)}
+              value={isCustomDesignation ? CUSTOM_DESIGNATION_OPTION : employeeForm.roleTitle}
+              onChange={(event) => selectDesignationForEmployee(event.target.value)}
             >
-              {employeeForm.roleTitle && !designationOptions.includes(employeeForm.roleTitle) ? (
-                <option value={employeeForm.roleTitle}>{employeeForm.roleTitle}</option>
-              ) : null}
+              <option value="">Select designation</option>
               {designationOptions.map((designation) => (
                 <option key={designation} value={designation}>
                   {designation}
                 </option>
               ))}
+              <option value={CUSTOM_DESIGNATION_OPTION}>Add new designation</option>
             </select>
+            {isCustomDesignation ? (
+              <>
+                <input
+                  className="ops-input"
+                  value={employeeForm.roleTitle}
+                  onChange={(event) => updateEmployeeForm("roleTitle", event.target.value)}
+                  placeholder="Enter new designation"
+                />
+                <span className="ops-row-subtitle">
+                  New designations are saved on the employee record and will appear in this dropdown
+                  after the roster refreshes.
+                </span>
+              </>
+            ) : null}
           </label>
           <label className="ops-form-field">
             <span className="ops-filter-label">Phone</span>
@@ -880,6 +1311,95 @@ export function EmployeeManagementPage() {
             />
           </label>
         </div>
+      </DetailDrawer>
+
+      <DetailDrawer
+        open={drawerMode === "promote"}
+        title="Convert to Permanent"
+        subtitle={
+          selectedWorker
+            ? `Assign an official EPF number to ${selectedWorker.fullName}. The EPF will become the employee number used for attendance matching.`
+            : "Assign an official EPF number to complete permanent registration."
+        }
+        onClose={closeDrawer}
+        footer={
+          <>
+            <Button tone="secondary" onClick={closeDrawer} disabled={saving}>
+              Cancel
+            </Button>
+            <Button
+              onClick={savePermanentConversion}
+              disabled={saving || !selectedWorker}
+            >
+              <UserCheck size={15} />
+              {saving ? "Saving..." : "Convert to Permanent"}
+            </Button>
+          </>
+        }
+      >
+        {selectedWorker ? (
+          <>
+            <div className="ops-grid cols-2">
+              <div className="ops-form-field">
+                <span className="ops-filter-label">Current temporary key</span>
+                <div className="ops-input" aria-readonly="true">
+                  {employeeTypeLabel(employeeTypeFromWorker(selectedWorker))} ·{" "}
+                  {selectedWorker.employeeId}
+                </div>
+              </div>
+              <label className="ops-form-field">
+                <span className="ops-filter-label">Official EPF number</span>
+                <input
+                  className="ops-input"
+                  value={permanentConversionForm.epfNo}
+                  onChange={(event) =>
+                    setPermanentConversionForm((current) => ({
+                      ...current,
+                      epfNo: event.target.value,
+                    }))
+                  }
+                  placeholder="Enter issued EPF number"
+                />
+              </label>
+              <label className="ops-form-field">
+                <span className="ops-filter-label">Effective date</span>
+                <input
+                  className="ops-input"
+                  type="date"
+                  value={permanentConversionForm.effectiveDate}
+                  onChange={(event) =>
+                    setPermanentConversionForm((current) => ({
+                      ...current,
+                      effectiveDate: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="ops-form-field" style={{ gridColumn: "1 / -1" }}>
+                <span className="ops-filter-label">HR conversion note</span>
+                <textarea
+                  className="ops-input"
+                  rows={4}
+                  value={permanentConversionForm.hrNotes}
+                  onChange={(event) =>
+                    setPermanentConversionForm((current) => ({
+                      ...current,
+                      hrNotes: event.target.value,
+                    }))
+                  }
+                  placeholder="Optional confirmation, document reference, or approval note"
+                />
+              </label>
+            </div>
+            <div className="ops-alert-banner">
+              After conversion, the employee is treated as Permanent and the EPF number becomes the
+              primary employee number used by face, fingerprint, attendance, reports, and line
+              assignment views. The previous temporary key is kept as an identity alias and biometric
+              cleanup is queued for the LAN bridge, so old Hikvision/ZKT identities can be removed
+              from devices after synchronization.
+            </div>
+          </>
+        ) : null}
       </DetailDrawer>
 
       <DetailDrawer

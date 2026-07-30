@@ -18,6 +18,10 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "../auth";
+import {
+  currentAttendanceDateKey,
+  isDateKeyInAttendanceDay,
+} from "../alert-dates";
 import { useOperations } from "../operations-context";
 import { type AppRouteKey, routeTitles } from "../permissions";
 import { normalizeRouterPathname } from "../router-base";
@@ -141,6 +145,9 @@ const navSections: Array<{ label: string; items: NavItem[] }> = [
   },
 ];
 
+const copyrightText = `© ${new Date().getFullYear()} Tradex Innovations. All rights reserved.`;
+const clientLogoSrc = "/brand/union-north-logo.png";
+
 function matchesPath(pathname: string, itemPath: string) {
   if (itemPath === "/") return pathname === "/";
   return pathname === itemPath || pathname.startsWith(`${itemPath}/`);
@@ -149,7 +156,7 @@ function matchesPath(pathname: string, itemPath: string) {
 export function Layout() {
   const location = useLocation();
   const { isConfigured, currentUser, canAccess, isAuthenticated, signOut } = useAuth();
-  const { alerts } = useOperations();
+  const { alerts, attendanceOverview } = useOperations();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [now, setNow] = useState(new Date());
 
@@ -182,7 +189,12 @@ export function Layout() {
     [canAccess]
   );
 
-  const openAlerts = alerts.filter((alert) => alert.status !== "Resolved").length;
+  const activeAlertDate = attendanceOverview.attendanceDate || currentAttendanceDateKey();
+  const openAlerts = alerts.filter(
+    (alert) =>
+      alert.status !== "Resolved" &&
+      isDateKeyInAttendanceDay(alert.createdAt, activeAlertDate)
+  ).length;
   const currentPathname = normalizeRouterPathname(location.pathname);
 
   const activeTitle = useMemo(() => {
@@ -197,8 +209,8 @@ export function Layout() {
     <div className="ops-sidebar">
       <div className="ops-sidebar-header">
         <div className="ops-brand">
-          <div className="ops-brand-mark">
-            <LayoutDashboard size={18} />
+          <div className="ops-brand-mark ops-client-logo-mark" aria-hidden="true">
+            <img src={clientLogoSrc} alt="" />
           </div>
           <div>
             <div className="ops-brand-title">
@@ -276,6 +288,7 @@ export function Layout() {
             </>
           )}
         </div>
+        <div className="ops-app-copyright">{copyrightText}</div>
       </div>
     </div>
   );
@@ -367,6 +380,7 @@ export function Layout() {
 
         <main className="ops-main">
           <Outlet />
+          <div className="ops-shell-copyright">{copyrightText}</div>
         </main>
       </div>
     </div>

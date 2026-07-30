@@ -112,6 +112,36 @@ def first_text(source: dict[str, Any], *names: str) -> str | None:
     return None
 
 
+AUTH_FAILED_TEXTS = (
+    "authentication failed",
+    "authentication failure",
+    "auth failed",
+    "verify failed",
+    "verification failed",
+    "face failed",
+)
+
+AUTH_FAILED_COMPACT_TEXTS = (
+    "authenticationfailed",
+    "authenticationfailure",
+    "authfailed",
+    "verifyfailed",
+    "verificationfailed",
+    "facefailed",
+)
+
+
+def is_authentication_failed_event(source: dict[str, Any]) -> bool:
+    try:
+        text = json.dumps(source, default=str).lower()
+    except TypeError:
+        text = " ".join(str(value) for value in source.values()).lower()
+    compact = text.replace(" ", "").replace("_", "").replace("-", "")
+    return any(phrase in text for phrase in AUTH_FAILED_TEXTS) or any(
+        phrase in compact for phrase in AUTH_FAILED_COMPACT_TEXTS
+    )
+
+
 def int_or_none(value: Any) -> int | None:
     try:
         return int(value)
@@ -132,8 +162,11 @@ def normalize_event(camera_url: str, node: dict[str, Any], timezone: ZoneInfo) -
     verify_mode = first_text(node, "currentVerifyMode")
     picture_url = first_text(node, "pictureURL")
     visible_light_pic_url = first_text(node, "visibleLightPicUrl", "visibleLightURL")
+    authentication_failed = is_authentication_failed_event(node)
     likely_face_event = bool(employee_no or person_name or picture_url or visible_light_pic_url)
     if verify_mode and "face" in verify_mode.lower():
+        likely_face_event = True
+    if authentication_failed:
         likely_face_event = True
     if not likely_face_event:
         return None
@@ -162,7 +195,7 @@ def normalize_event(camera_url: str, node: dict[str, Any], timezone: ZoneInfo) -
         "eventTime": event_time.isoformat(),
         "verifyMode": verify_mode,
         "attendanceStatus": first_text(node, "attendanceStatus"),
-        "accessDecision": "recognized" if employee_no else "unknown",
+        "accessDecision": "unknown" if authentication_failed or not employee_no else "recognized",
         "pictureUrl": picture_url,
         "visibleLightPicUrl": visible_light_pic_url,
         "thermalPicUrl": first_text(node, "thermalPicUrl"),

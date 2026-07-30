@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { Link, Navigate, useLocation, useNavigate } from "react-router";
+import { Navigate, useLocation, useNavigate } from "react-router";
+import { Eye, EyeOff, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { useAuth } from "../auth";
 import { getAuthRedirectPath, getAuthRouteState } from "../auth-routing";
 import { AuthPageShell } from "../components/auth-page-shell";
@@ -19,12 +20,13 @@ export function LoginPage() {
     flash ? "info" : "info"
   );
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   if (!isConfigured) {
     return (
       <AccessDeniedState
-        title="Supabase configuration required"
-        description="Create the project .env file, restart Vite, and make sure the local Supabase stack is running before signing in."
+        title="Secure workspace unavailable"
+        description="LineMatrix is not connected to its authentication service in this environment. Contact the system administrator before signing in."
       />
     );
   }
@@ -33,7 +35,7 @@ export function LoginPage() {
     return (
       <AccessDeniedState
         title="Loading secure session"
-        description="The application is checking your existing Supabase session before showing the sign-in form."
+        description="LineMatrix is checking your existing session before opening the sign-in form."
       />
     );
   }
@@ -57,57 +59,82 @@ export function LoginPage() {
 
   return (
     <AuthPageShell
-      eyebrow="Secure access"
+      eyebrow="Secure client access"
       title="Sign in to LineMatrix"
-      description="Use your Supabase credentials to open the live operations workspace and continue with the same protected data across every screen."
-      footer={
-        <p className="ops-auth-footer-copy">
-          Need a new workspace account? <Link to="/sign-up" state={{ from: redirectTo }}>Create one here</Link>.
-        </p>
-      }
+      description=""
+      showBrandPanel={false}
     >
-      <div className="ops-auth-form-stack">
-        <div>
-          <div className="ops-card-title">Welcome back</div>
-          <p className="ops-card-subtitle">Sign in with an existing account to continue into the operational workspace.</p>
+      <div className="ops-auth-form-card">
+        <div className="ops-auth-form-header">
+          <div className="ops-auth-form-icon">
+            <ShieldCheck size={20} />
+          </div>
+          <div>
+            <div className="ops-card-title">Welcome back</div>
+            <p className="ops-card-subtitle">
+              Authorized staff can continue into the operational workspace.
+            </p>
+          </div>
         </div>
 
         <form className="ops-auth-form-stack" onSubmit={handleSubmit}>
           <label className="ops-filter-group">
             <span className="ops-filter-label">Email address</span>
-            <input
-              className="ops-input"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@example.com"
-              autoComplete="email"
-              required
-            />
+            <span className="ops-auth-input-shell">
+              <Mail size={18} aria-hidden="true" />
+              <input
+                className="ops-input"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="name@company.com"
+                autoComplete="email"
+                inputMode="email"
+                spellCheck={false}
+                required
+              />
+            </span>
           </label>
 
           <label className="ops-filter-group">
             <span className="ops-filter-label">Password</span>
-            <input
-              className="ops-input"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="Enter your password"
-              autoComplete="current-password"
-              required
-            />
+            <span className="ops-auth-input-shell">
+              <LockKeyhole size={18} aria-hidden="true" />
+              <input
+                className="ops-input"
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Enter your password"
+                autoComplete="current-password"
+                required
+              />
+              <button
+                className="ops-auth-password-toggle"
+                type="button"
+                onClick={() => setShowPassword((value) => !value)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </span>
           </label>
 
-          {feedback ? <div className={`ops-badge tone-${feedbackTone}`}>{feedback}</div> : null}
+          {feedback ? (
+            <div className={`ops-auth-feedback tone-${feedbackTone}`} role="status">
+              {feedback}
+            </div>
+          ) : null}
 
           <div className="ops-auth-actions">
             <Button tone="primary" type="submit" disabled={submitting}>
-              {submitting ? "Signing in..." : "Sign in"}
+              {submitting ? "Verifying..." : "Sign in securely"}
             </Button>
-            <Link to="/sign-up" state={{ from: redirectTo }} className="ops-button ops-button-secondary">
-              Sign up
-            </Link>
+          </div>
+
+          <div className="ops-auth-security-note">
+            <ShieldCheck size={16} aria-hidden="true" />
+            <span>Authorized access only. Accounts are issued and managed by the system administrator.</span>
           </div>
         </form>
       </div>

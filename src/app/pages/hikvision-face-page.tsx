@@ -286,8 +286,8 @@ export function HikvisionFacePage() {
           value={`${status.onlineCameraCount || 0}/${status.cameraCount || cameras.length || 0}`}
           meta="Online cameras across the configured feed group"
           icon={Wifi}
-          accent="#0a84ff"
-          soft="rgba(10, 132, 255, 0.14)"
+          accent="#263574"
+          soft="rgba(38, 53, 116, 0.14)"
         />
         <KpiCard
           label="Live Polling"

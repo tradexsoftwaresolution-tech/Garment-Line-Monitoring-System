@@ -701,16 +701,18 @@ public class HikvisionService {
 
   private Optional<HikvisionRecognitionEvent> normalizeEvent(CameraDefinition camera, JsonNode node) {
     String employeeNo = firstText(node, "employeeNoString", "employeeNo", "employeeNoString");
-    String verifyMode = JsonSupport.text(node, "currentVerifyMode");
-    String pictureUrl = JsonSupport.text(node, "pictureURL");
-    String visibleLightPicUrl = firstText(node, "visibleLightPicUrl", "visibleLightURL");
-    String devicePersonName = JsonSupport.text(node, "name");
+    String verifyMode = firstText(node, "currentVerifyMode", "verifyMode", "verify_mode");
+    String pictureUrl = firstText(node, "pictureURL", "pictureUrl", "picture_url");
+    String visibleLightPicUrl = firstText(node, "visibleLightPicUrl", "visibleLightURL", "visible_light_pic_url");
+    String devicePersonName = firstText(node, "name", "devicePersonName", "device_person_name");
+    boolean authenticationFailed = isAuthenticationFailedEvent(node);
     boolean likelyFaceEvent =
         hasText(employeeNo)
             || hasText(devicePersonName)
             || hasText(pictureUrl)
             || hasText(visibleLightPicUrl)
-            || (verifyMode != null && verifyMode.toLowerCase(Locale.ROOT).contains("face"));
+            || (verifyMode != null && verifyMode.toLowerCase(Locale.ROOT).contains("face"))
+            || authenticationFailed;
 
     if (!likelyFaceEvent) {
       return Optional.empty();
@@ -720,10 +722,10 @@ public class HikvisionService {
     String serialNo = firstText(node, "serialNo", "SerialNo");
     Integer major = intValue(node, "major");
     Integer minor = intValue(node, "minor");
-    EmployeeMatch match = hasText(employeeNo) ? findEmployee(employeeNo) : EmployeeMatch.unmatched();
+    EmployeeMatch match = hasText(employeeNo) && !authenticationFailed ? findEmployee(employeeNo) : EmployeeMatch.unmatched();
     String id = eventId(camera.id(), serialNo, employeeNo, eventTime, major, minor);
-    String attendanceStatus = JsonSupport.text(node, "attendanceStatus");
-    String accessDecision = hasText(employeeNo) ? "recognized" : "unknown";
+    String attendanceStatus = firstText(node, "attendanceStatus", "attendance_status");
+    String accessDecision = authenticationFailed || !hasText(employeeNo) ? "unknown" : "recognized";
 
     return Optional.of(
         new HikvisionRecognitionEvent(
@@ -1064,6 +1066,23 @@ public class HikvisionService {
       }
     }
     return null;
+  }
+
+  private boolean isAuthenticationFailedEvent(JsonNode node) {
+    String text = node == null ? "" : node.toString().toLowerCase(Locale.ROOT);
+    String compact = text.replace(" ", "").replace("_", "").replace("-", "");
+    return text.contains("authentication failed")
+        || text.contains("authentication failure")
+        || text.contains("auth failed")
+        || text.contains("verify failed")
+        || text.contains("verification failed")
+        || text.contains("face failed")
+        || compact.contains("authenticationfailed")
+        || compact.contains("authenticationfailure")
+        || compact.contains("authfailed")
+        || compact.contains("verifyfailed")
+        || compact.contains("verificationfailed")
+        || compact.contains("facefailed");
   }
 
   private Integer intValue(JsonNode node, String name) {

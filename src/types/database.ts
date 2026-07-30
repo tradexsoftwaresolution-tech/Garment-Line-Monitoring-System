@@ -40,6 +40,7 @@ type DepartmentRow = {
 type EmployeeRow = {
   id: string;
   employee_code: string;
+  employee_category: "permanent" | "new_joiner" | "intern" | null;
   epf_no: string | null;
   display_name: string | null;
   designation: string | null;
@@ -54,6 +55,33 @@ type EmployeeRow = {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+};
+
+type EmployeeCodeAliasRow = {
+  id: string;
+  employee_id: string;
+  old_employee_code: string;
+  new_employee_code: string;
+  old_employee_category: string | null;
+  effective_date: string;
+  reason: string;
+  hr_notes: string | null;
+  created_at: string;
+  created_by: string | null;
+};
+
+type DeviceIdentitySyncQueueRow = {
+  id: string;
+  employee_id: string | null;
+  device_family: "hikvision" | "zkteco";
+  action: "delete_identity" | "upsert_identity";
+  old_employee_code: string | null;
+  new_employee_code: string | null;
+  status: "pending" | "processing" | "completed" | "failed" | "skipped";
+  payload: Json;
+  error_message: string | null;
+  created_at: string;
+  processed_at: string | null;
 };
 
 type LeaveCodeMapRow = {
@@ -554,6 +582,7 @@ export interface Database {
         {
           id?: string;
           employee_code: string;
+          employee_category?: EmployeeRow["employee_category"];
           epf_no?: string | null;
           display_name?: string | null;
           designation?: string | null;
@@ -568,6 +597,37 @@ export interface Database {
           is_active?: boolean;
           created_at?: string;
           updated_at?: string;
+        }
+      >;
+      employee_code_aliases: GenericTable<
+        EmployeeCodeAliasRow,
+        {
+          id?: string;
+          employee_id: string;
+          old_employee_code: string;
+          new_employee_code: string;
+          old_employee_category?: string | null;
+          effective_date?: string;
+          reason?: string;
+          hr_notes?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+        }
+      >;
+      device_identity_sync_queue: GenericTable<
+        DeviceIdentitySyncQueueRow,
+        {
+          id?: string;
+          employee_id?: string | null;
+          device_family: DeviceIdentitySyncQueueRow["device_family"];
+          action: DeviceIdentitySyncQueueRow["action"];
+          old_employee_code?: string | null;
+          new_employee_code?: string | null;
+          status?: DeviceIdentitySyncQueueRow["status"];
+          payload?: Json;
+          error_message?: string | null;
+          created_at?: string;
+          processed_at?: string | null;
         }
       >;
       leave_code_map: GenericTable<
@@ -1096,6 +1156,15 @@ export interface Database {
           p_employee_id: string;
           p_destination_line_id: string;
           p_reason: string;
+        };
+        Returns: Json;
+      };
+      rpc_convert_employee_to_permanent: {
+        Args: {
+          p_employee_id: string;
+          p_epf_no: string;
+          p_effective_date?: string | null;
+          p_hr_notes?: string | null;
         };
         Returns: Json;
       };

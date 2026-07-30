@@ -28,7 +28,7 @@ import type { FaceEvent, ProductionLineRecord, WorkerProfile } from "../types";
 type Tone = "good" | "warning" | "danger" | "info" | "neutral";
 type TabId = "today" | "mismatch" | "employees" | "lines";
 type MismatchKind = "camera-missed" | "fingerprint-missed" | "none";
-type MismatchFilter = "all" | "camera-missed" | "unregistered-face" | "fingerprint-missed";
+type MismatchFilter = "all" | "camera-missed" | "unregistered-face" | "unknown-face" | "fingerprint-missed";
 type EmployeeFilter = "attention" | "attended" | "absent" | "late" | "present";
 
 type Issue = {
@@ -49,6 +49,7 @@ const MISMATCH_FILTERS = [
   { id: "all", label: "All" },
   { id: "camera-missed", label: "Camera missed" },
   { id: "unregistered-face", label: "Not registered" },
+  { id: "unknown-face", label: "Unknown face" },
   { id: "fingerprint-missed", label: "Fingerprint missed" },
 ] satisfies Array<{ id: MismatchFilter; label: string }>;
 
@@ -59,6 +60,8 @@ const EMPLOYEE_FILTERS = [
   { id: "late", label: "Late" },
   { id: "present", label: "Present" },
 ] satisfies Array<{ id: EmployeeFilter; label: string }>;
+
+const clientLogoSrc = "/brand/union-north-logo.png";
 
 const MISMATCH_PAGE_SIZE = 10;
 const EMPLOYEE_PAGE_SIZE = 20;
@@ -161,8 +164,68 @@ function isFaceEventMatched(event: FaceEvent) {
   return Boolean(event.workerId) || event.matchStatus === "matched" || event.outcome === "matched";
 }
 
+function normalizeFaceIdentifier(value?: string) {
+  const normalized = value?.trim();
+  if (!normalized) return "";
+
+  const lower = normalized.toLowerCase();
+  if (["-", "--", "n/a", "na", "null", "undefined", "unknown", "unknown person"].includes(lower)) {
+    return "";
+  }
+
+  return normalized;
+}
+
+function compactFaceEventText(value: string) {
+  return value.toLowerCase().replace(/[\s_-]+/g, "");
+}
+
+function faceEventTextBlob(event: FaceEvent) {
+  return [
+    event.employeeNo,
+    event.devicePersonName,
+    event.cameraName,
+    event.cameraLocation,
+    event.gate,
+    event.matchStatus,
+    event.outcome,
+    event.verifyMode,
+    event.attendanceStatus,
+    event.accessDecision,
+    event.rawPayload ? JSON.stringify(event.rawPayload) : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function isAuthenticationFailedFaceEvent(event: FaceEvent) {
+  const text = faceEventTextBlob(event);
+  const compact = compactFaceEventText(text);
+  return (
+    text.includes("authentication failed") ||
+    text.includes("authentication failure") ||
+    text.includes("auth failed") ||
+    text.includes("verify failed") ||
+    text.includes("verification failed") ||
+    text.includes("face failed") ||
+    compact.includes("authenticationfailed") ||
+    compact.includes("authenticationfailure") ||
+    compact.includes("authfailed") ||
+    compact.includes("verifyfailed") ||
+    compact.includes("verificationfailed") ||
+    compact.includes("facefailed")
+  );
+}
+
+function isUnknownFaceEvent(event: FaceEvent) {
+  if (isFaceEventMatched(event)) return false;
+  if (isAuthenticationFailedFaceEvent(event)) return true;
+  return !normalizeFaceIdentifier(event.employeeNo) && !normalizeFaceIdentifier(event.devicePersonName);
+}
+
 function faceEventPersonLabel(event: FaceEvent) {
-  return event.employeeNo || event.devicePersonName || "Unknown person";
+  return normalizeFaceIdentifier(event.employeeNo) || normalizeFaceIdentifier(event.devicePersonName) || "Unknown face";
 }
 
 function faceEventCameraLabel(event: FaceEvent) {
@@ -178,6 +241,9 @@ function faceEventSearchText(event: FaceEvent) {
     event.gate,
     event.matchStatus,
     event.outcome,
+    event.verifyMode,
+    event.attendanceStatus,
+    event.accessDecision,
   ]
     .filter(Boolean)
     .join(" ")
@@ -316,7 +382,18 @@ export function IeFullDashboardPage() {
   const unregisteredFaceEvents = useMemo(
     () =>
       faceEvents
-        .filter((event) => !isFaceEventMatched(event))
+        .filter((event) => !isFaceEventMatched(event) && !isUnknownFaceEvent(event))
+        .sort((a, b) => {
+          const firstTime = new Date(a.timestamp).getTime();
+          const secondTime = new Date(b.timestamp).getTime();
+          return (Number.isNaN(secondTime) ? 0 : secondTime) - (Number.isNaN(firstTime) ? 0 : firstTime);
+        }),
+    [faceEvents]
+  );
+  const unknownFaceEvents = useMemo(
+    () =>
+      faceEvents
+        .filter(isUnknownFaceEvent)
         .sort((a, b) => {
           const firstTime = new Date(a.timestamp).getTime();
           const secondTime = new Date(b.timestamp).getTime();
@@ -356,6 +433,16 @@ export function IeFullDashboardPage() {
       return faceEventSearchText(event).includes(normalized);
     });
   }, [mismatchFilter, mismatchQuery, unregisteredFaceEvents]);
+
+  const filteredUnknownFaceEvents = useMemo(() => {
+    if (mismatchFilter !== "all" && mismatchFilter !== "unknown-face") return [];
+    const normalized = normalizeSearch(mismatchQuery);
+
+    return unknownFaceEvents.filter((event) => {
+      if (!normalized) return true;
+      return `${faceEventSearchText(event)} unknown face no device employee code`.includes(normalized);
+    });
+  }, [mismatchFilter, mismatchQuery, unknownFaceEvents]);
 
   const employeeRows = useMemo(() => {
     const normalized = normalizeSearch(employeeQuery);
@@ -397,11 +484,12 @@ export function IeFullDashboardPage() {
       }),
     [lineRows]
   );
-  const mismatchReviewCount = mismatchWorkers.length + unregisteredFaceEvents.length;
+  const mismatchReviewCount = mismatchWorkers.length + unregisteredFaceEvents.length + unknownFaceEvents.length;
   const filteredMismatchCount =
     filteredRegisteredCameraMissedWorkers.length +
     filteredRegisteredFingerprintMissedWorkers.length +
-    filteredUnregisteredFaceEvents.length;
+    filteredUnregisteredFaceEvents.length +
+    filteredUnknownFaceEvents.length;
 
   const urgentIssues = useMemo<Issue[]>(() => {
     const issues: Issue[] = [];
@@ -411,7 +499,7 @@ export function IeFullDashboardPage() {
       issues.push({
         id: "employee-mismatches",
         title: `${plural(mismatchReviewCount, "mismatch", "mismatches")} to review`,
-        detail: `${registeredCameraMissedWorkers.length} camera missed, ${unregisteredFaceEvents.length} not registered, ${registeredFingerprintMissedWorkers.length} fingerprint missed`,
+        detail: `${registeredCameraMissedWorkers.length} camera missed, ${unregisteredFaceEvents.length} not registered, ${unknownFaceEvents.length} unknown face, ${registeredFingerprintMissedWorkers.length} fingerprint missed`,
         tone: "danger",
       });
     }
@@ -471,16 +559,19 @@ export function IeFullDashboardPage() {
     redLines,
     registeredCameraMissedWorkers.length,
     registeredFingerprintMissedWorkers.length,
+    unknownFaceEvents.length,
     unregisteredFaceEvents.length,
     unmatchedAttendanceChecks,
   ]);
 
   const visibleCameraMissedWorkers = filteredRegisteredCameraMissedWorkers.slice(0, mismatchVisibleCount);
   const visibleUnregisteredFaceEvents = filteredUnregisteredFaceEvents.slice(0, mismatchVisibleCount);
+  const visibleUnknownFaceEvents = filteredUnknownFaceEvents.slice(0, mismatchVisibleCount);
   const visibleFingerprintMissedWorkers = filteredRegisteredFingerprintMissedWorkers.slice(0, mismatchVisibleCount);
   const hasMoreMismatchRows =
     filteredRegisteredCameraMissedWorkers.length > visibleCameraMissedWorkers.length ||
     filteredUnregisteredFaceEvents.length > visibleUnregisteredFaceEvents.length ||
+    filteredUnknownFaceEvents.length > visibleUnknownFaceEvents.length ||
     filteredRegisteredFingerprintMissedWorkers.length > visibleFingerprintMissedWorkers.length;
   const visibleEmployeeRows = employeeRows.slice(0, employeeVisibleCount);
   const selectedWorker = selectedWorkerId ? workers.find((worker) => worker.id === selectedWorkerId) : undefined;
@@ -640,7 +731,7 @@ export function IeFullDashboardPage() {
           <div className="ops-ceo-brand-row">
             <div className="ops-ceo-brand-copy">
               <div className="ops-ceo-factory">
-                <Factory size={18} />
+                <img className="ops-ceo-factory-logo" src={clientLogoSrc} alt="" />
                 Union North Garment
               </div>
               <h1>{greeting}</h1>
@@ -900,7 +991,7 @@ export function IeFullDashboardPage() {
                     <div className="ops-ceo-subsection-heading">
                       <div>
                         <h3>Face events not registered in LineMatrix</h3>
-                        <p>The camera detected a person, but the event did not match an active employee.</p>
+                        <p>The camera captured a person identifier, but it did not match an active employee.</p>
                       </div>
                       <span>{formatNumber(filteredUnregisteredFaceEvents.length)}</span>
                     </div>
@@ -931,6 +1022,48 @@ export function IeFullDashboardPage() {
                         <article className="ops-ceo-empty-card">
                           <CheckCircle2 size={22} />
                           No unregistered face events
+                        </article>
+                      )}
+                    </div>
+                  </section>
+                ) : null}
+
+                {mismatchFilter === "all" || mismatchFilter === "unknown-face" ? (
+                  <section className="ops-ceo-mismatch-group">
+                    <div className="ops-ceo-subsection-heading">
+                      <div>
+                        <h3>Unknown face events</h3>
+                        <p>The camera recorded a face event, but no employee code or person identity was captured.</p>
+                      </div>
+                      <span>{formatNumber(filteredUnknownFaceEvents.length)}</span>
+                    </div>
+                    <div className="ops-ceo-mismatch-list">
+                      {visibleUnknownFaceEvents.length > 0 ? (
+                        visibleUnknownFaceEvents.map((event) => (
+                          <article key={event.id} className="ops-ceo-mismatch-card tone-warning">
+                            <div className="ops-ceo-mismatch-top">
+                              <div>
+                                <h3>{faceEventPersonLabel(event)}</h3>
+                                <p>{formatEventDateTime(event.timestamp)} - {faceEventCameraLabel(event)}</p>
+                              </div>
+                              <span>Unknown</span>
+                            </div>
+                            <div className="ops-ceo-system-row">
+                              <span className="is-no">
+                                <ScanFace size={16} />
+                                Unknown face event
+                              </span>
+                              <span className="is-no">
+                                <UserX size={16} />
+                                No device employee code
+                              </span>
+                            </div>
+                          </article>
+                        ))
+                      ) : (
+                        <article className="ops-ceo-empty-card">
+                          <CheckCircle2 size={22} />
+                          No unknown face events
                         </article>
                       )}
                     </div>

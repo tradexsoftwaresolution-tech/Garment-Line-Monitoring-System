@@ -1,6 +1,10 @@
 import { useMemo } from "react";
 import { Link } from "react-router";
 import { AlertTriangle, Clock3, Fingerprint, ShieldCheck, Users } from "lucide-react";
+import {
+  currentAttendanceDateKey,
+  isDateKeyInAttendanceDay,
+} from "../alert-dates";
 import { useAuth } from "../auth";
 import { resolveFingerprintDeviceSummary } from "../fingerprint-device-counts";
 import { useZktecoFingerprintEvents } from "../hooks/use-zkteco-fingerprint-events";
@@ -38,16 +42,22 @@ export function DashboardPage() {
   } = useOperations();
 
   const isIeUser = currentUser.role === "ie";
+  const isHrUser = currentUser.role === "hr";
   const { events: zktecoFingerprintEvents } = useZktecoFingerprintEvents(5000, !isIeUser);
   const resolvedFingerprintDeviceSummary = useMemo(
     () => resolveFingerprintDeviceSummary(fingerprintDeviceSummary, zktecoFingerprintEvents),
     [fingerprintDeviceSummary, zktecoFingerprintEvents]
   );
   const latestAttendanceDateLabel = formatAttendanceDate(attendanceOverview.attendanceDate);
+  const activeAlertDate = attendanceOverview.attendanceDate || currentAttendanceDateKey();
   const clockedInToday = attendanceOverview.presentWorkers + attendanceOverview.lateWorkers;
   const fingerprintDeviceCount =
     resolvedFingerprintDeviceSummary.totalDevicePins || clockedInToday;
-  const openAlerts = alerts.filter((alert) => alert.status !== "Resolved");
+  const openAlerts = alerts.filter(
+    (alert) =>
+      alert.status !== "Resolved" &&
+      isDateKeyInAttendanceDay(alert.createdAt, activeAlertDate)
+  );
   const lineCoverage = useMemo(
     () =>
       [...lines]
@@ -110,14 +120,14 @@ export function DashboardPage() {
         <KpiCard
           label="Open Alerts"
           value={`${openAlerts.length}`}
-          meta={`${attendanceOverview.absentWorkers} workers are still not clocked in for the latest attendance date.`}
+          meta={`${attendanceOverview.absentWorkers} workers are still not clocked in for today's attendance date.`}
           icon={AlertTriangle}
           accent="var(--ops-danger)"
           soft="var(--ops-danger-soft)"
         />
       </section>
 
-      <section className="ops-grid cols-2">
+      <section className={`ops-grid${isHrUser ? "" : " cols-2"}`}>
         <Card
           title="Department Attendance"
           subtitle={`Current attendance by department for ${latestAttendanceDateLabel}.`}
@@ -171,45 +181,47 @@ export function DashboardPage() {
           </div>
         </Card>
 
-        <Card
-          title="Line Attendance Snapshot"
-          subtitle="Assigned versus attended workers for the lines that need the most attention today."
-          actions={
-            <Link to="/production-lines" className="ops-button ops-button-ghost">
-              View All Lines
-            </Link>
-          }
-        >
-          <div className="ops-list">
-            {lineCoverage.map((line) => (
-              <div key={line.id} className="ops-list-item">
-                <div className="ops-item-header">
-                  <div>
-                    <div className="ops-item-title">{line.name}</div>
-                    <div className="ops-row-subtitle">
-                      {line.department} · {line.shift}
+        {!isHrUser ? (
+          <Card
+            title="Line Attendance Snapshot"
+            subtitle="Assigned versus attended workers for the lines that need the most attention today."
+            actions={
+              <Link to="/production-lines" className="ops-button ops-button-ghost">
+                View All Lines
+              </Link>
+            }
+          >
+            <div className="ops-list">
+              {lineCoverage.map((line) => (
+                <div key={line.id} className="ops-list-item">
+                  <div className="ops-item-header">
+                    <div>
+                      <div className="ops-item-title">{line.name}</div>
+                      <div className="ops-row-subtitle">
+                        {line.department} · {line.shift}
+                      </div>
                     </div>
+                    <StatusBadge
+                      label={`${line.presentWorkers + line.lateWorkers}/${line.assignedWorkers} came`}
+                      tone={
+                        line.attendanceRate >= 85
+                          ? "success"
+                          : line.attendanceRate >= 70
+                            ? "warning"
+                            : "danger"
+                      }
+                    />
                   </div>
-                  <StatusBadge
-                    label={`${line.presentWorkers + line.lateWorkers}/${line.assignedWorkers} came`}
-                    tone={
-                      line.attendanceRate >= 85
-                        ? "success"
-                        : line.attendanceRate >= 70
-                          ? "warning"
-                          : "danger"
-                    }
-                  />
+                  <div className="ops-item-meta">
+                    <span>{line.supervisor}</span>
+                    <span>{line.onLeaveWorkers} on leave</span>
+                    <span>{line.absentWorkers} absent</span>
+                  </div>
                 </div>
-                <div className="ops-item-meta">
-                  <span>{line.supervisor}</span>
-                  <span>{line.onLeaveWorkers} on leave</span>
-                  <span>{line.absentWorkers} absent</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
+              ))}
+            </div>
+          </Card>
+        ) : null}
       </section>
 
       <section className="ops-grid cols-2">
@@ -286,7 +298,7 @@ export function DashboardPage() {
 
         <Card
           title="Alerts Center"
-          subtitle="Open exceptions that still need follow-up from supervisors or HR."
+          subtitle="Today's open exceptions that still need follow-up from supervisors or HR."
           actions={
             <Link to="/alerts-center" className="ops-button ops-button-ghost">
               Open Alerts

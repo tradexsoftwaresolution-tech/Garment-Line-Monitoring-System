@@ -1,5 +1,9 @@
 import { useMemo, useState } from "react";
 import { useAuth } from "../auth";
+import {
+  currentAttendanceDateKey,
+  isDateKeyInAttendanceDay,
+} from "../alert-dates";
 import { useOperations } from "../operations-context";
 import type { AlertRecord, AlertState } from "../types";
 import {
@@ -17,10 +21,11 @@ import { AlertTriangle, BellDot, CheckCheck, ShieldAlert } from "lucide-react";
 
 export function AlertsCenterPage() {
   const { currentUser, users } = useAuth();
-  const { alerts, updateAlertStatus, assignAlert } = useOperations();
+  const { alerts, attendanceOverview, updateAlertStatus, assignAlert } = useOperations();
   const [priorityFilter, setPriorityFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
   const [feedback, setFeedback] = useState<string | null>(null);
+  const activeAlertDate = attendanceOverview.attendanceDate || currentAttendanceDateKey();
 
   const handleStatusChange = async (alertId: string, status: AlertState) => {
     const result = await updateAlertStatus({
@@ -46,10 +51,17 @@ export function AlertsCenterPage() {
     return matchesPriority && matchesStatus;
   };
 
-  const sevenDayNoSignalAlerts = alerts.filter((alert) => alert.derived);
-  const operationalAlerts = alerts.filter((alert) => !alert.derived);
+  const todaysAlerts = alerts.filter((alert) =>
+    isDateKeyInAttendanceDay(alert.createdAt, activeAlertDate)
+  );
+  const historyAlerts = alerts.filter(
+    (alert) => !isDateKeyInAttendanceDay(alert.createdAt, activeAlertDate)
+  );
+  const sevenDayNoSignalAlerts = todaysAlerts.filter((alert) => alert.derived);
+  const operationalAlerts = todaysAlerts.filter((alert) => !alert.derived);
   const filteredSevenDayNoSignalAlerts = sevenDayNoSignalAlerts.filter(matchesActiveFilters);
   const filteredOperationalAlerts = operationalAlerts.filter(matchesActiveFilters);
+  const filteredHistoryAlerts = historyAlerts.filter(matchesActiveFilters);
 
   const counts = useMemo(
     () => ({
@@ -122,11 +134,11 @@ export function AlertsCenterPage() {
     <div className="ops-page">
       <PageHeader
         title="Alerts & Exceptions Center"
-        subtitle="Dedicated operational alert queue with assignment, read state, resolution tracking, and recent history."
+        subtitle={`Today's alert queue for ${activeAlertDate}. Past-day alerts are retained below as history.`}
         actions={
           <>
-            <StatusBadge label={`${counts.open} open`} tone="danger" />
-            <StatusBadge label={`${counts.resolved} resolved`} tone="success" />
+            <StatusBadge label={`${counts.open} open today`} tone="danger" />
+            <StatusBadge label={`${historyAlerts.length} historical`} tone="info" />
           </>
         }
       />
@@ -141,7 +153,7 @@ export function AlertsCenterPage() {
         <KpiCard
           label="Critical"
           value={`${counts.critical}`}
-          meta="Manual operational alerts requiring attention."
+          meta="Manual operational alerts requiring attention today."
           icon={AlertTriangle}
           accent="var(--ops-danger)"
           soft="var(--ops-danger-soft)"
@@ -149,7 +161,7 @@ export function AlertsCenterPage() {
         <KpiCard
           label="High Priority"
           value={`${counts.high}`}
-          meta="Monitor closely and clear inside this shift."
+          meta="Monitor today's queue closely and clear inside this shift."
           icon={ShieldAlert}
           accent="var(--ops-warning)"
           soft="var(--ops-warning-soft)"
@@ -157,7 +169,7 @@ export function AlertsCenterPage() {
         <KpiCard
           label="Open Alerts"
           value={`${counts.open}`}
-          meta="Still active in supervisor or HR workload."
+          meta="Today's active supervisor or HR workload."
           icon={BellDot}
           accent="var(--ops-primary)"
           soft="var(--ops-primary-soft)"
@@ -165,7 +177,7 @@ export function AlertsCenterPage() {
         <KpiCard
           label="Resolved"
           value={`${counts.resolved}`}
-          meta="Closed alerts retained for history and audit."
+          meta="Today's closed alerts. Older records are in history."
           icon={CheckCheck}
           accent="var(--ops-success)"
           soft="var(--ops-success-soft)"
@@ -173,7 +185,7 @@ export function AlertsCenterPage() {
         <KpiCard
           label="7-Day No Signal"
           value={`${counts.sevenDayNoSignal}`}
-          meta="Employees with no face or fingerprint attendance for seven attendance days."
+          meta="Today's generated seven-day no-signal alerts."
           icon={ShieldAlert}
           accent="var(--ops-danger)"
           soft="var(--ops-danger-soft)"
@@ -198,7 +210,7 @@ export function AlertsCenterPage() {
 
       <Card
         title="Seven-Day No Face/Fingerprint Alerts"
-        subtitle="System-generated employees with no face or fingerprint attendance for seven consecutive attendance days."
+        subtitle="Today's system-generated employees with no face or fingerprint attendance for seven consecutive attendance days."
       >
         {filteredSevenDayNoSignalAlerts.length ? (
           <div className="ops-list">{filteredSevenDayNoSignalAlerts.map(renderAlertItem)}</div>
@@ -212,7 +224,7 @@ export function AlertsCenterPage() {
 
       <Card
         title="Operational Alert Queue"
-        subtitle="Manual supervisor and HR alerts with assignment, read state, and resolution workflow."
+        subtitle="Today's manual supervisor and HR alerts with assignment, read state, and resolution workflow."
       >
         {filteredOperationalAlerts.length ? (
           <div className="ops-list">{filteredOperationalAlerts.map(renderAlertItem)}</div>
@@ -224,36 +236,46 @@ export function AlertsCenterPage() {
         )}
       </Card>
 
-      <Card title="Alert History Log" subtitle="Latest alert actions and ownership changes.">
-        <div className="ops-table-wrap">
-          <table className="ops-table">
-            <thead>
-              <tr>
-                <th>Alert</th>
-                <th>Priority</th>
-                <th>Latest action</th>
-                <th>Assigned</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {alerts.map((alert) => (
-                <tr key={alert.id}>
-                  <td>
-                    <div className="ops-row-title">{alert.title}</div>
-                    <div className="ops-row-subtitle">{formatDateTime(alert.createdAt)}</div>
-                  </td>
-                  <td>
-                    <StatusBadge label={alert.priority.toUpperCase()} tone={priorityTone(alert.priority)} />
-                  </td>
-                  <td>{alert.history[0]?.action || "No history"}</td>
-                  <td>{alert.derived ? "System generated" : users.find((user) => user.id === alert.assignedToUserId)?.name || "Unassigned"}</td>
-                  <td>{alert.status}</td>
+      <Card
+        title="Past Alert History"
+        subtitle="Alerts created before today's attendance date, retained for review and audit."
+      >
+        {filteredHistoryAlerts.length ? (
+          <div className="ops-table-wrap">
+            <table className="ops-table">
+              <thead>
+                <tr>
+                  <th>Alert</th>
+                  <th>Priority</th>
+                  <th>Latest action</th>
+                  <th>Assigned</th>
+                  <th>Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {filteredHistoryAlerts.map((alert) => (
+                  <tr key={alert.id}>
+                    <td>
+                      <div className="ops-row-title">{alert.title}</div>
+                      <div className="ops-row-subtitle">{formatDateTime(alert.createdAt)}</div>
+                    </td>
+                    <td>
+                      <StatusBadge label={alert.priority.toUpperCase()} tone={priorityTone(alert.priority)} />
+                    </td>
+                    <td>{alert.history[0]?.action || "No history"}</td>
+                    <td>{alert.derived ? "System generated" : users.find((user) => user.id === alert.assignedToUserId)?.name || "Unassigned"}</td>
+                    <td>{alert.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyState
+            title="No historical alerts matched the current filters"
+            description="Past-day alerts will appear here after the attendance date changes."
+          />
+        )}
       </Card>
     </div>
   );

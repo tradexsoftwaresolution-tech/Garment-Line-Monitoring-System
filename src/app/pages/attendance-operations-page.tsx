@@ -51,7 +51,7 @@ function formatChartEfficiency(value?: number | null) {
   return `${value.toFixed(1)}%`;
 }
 
-const CADRE_COLORS = ["#16a34a", "#2563eb", "#7c3aed"];
+const CADRE_COLORS = ["#16a34a", "#263574", "#7c3aed"];
 
 function defaultDateRange() {
   const today = new Date();
@@ -478,7 +478,7 @@ export function AttendanceOperationsPage() {
                   <Tooltip formatter={(value) => formatChartEfficiency(Number(value))} />
                   <Legend />
                   <Bar dataKey="plannedEfficiency" name="Plan" fill="#94a3b8" radius={[6, 6, 0, 0]} />
-                  <Bar dataKey="forecastEfficiency" name="Forecast" fill="#2563eb" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="forecastEfficiency" name="Forecast" fill="#263574" radius={[6, 6, 0, 0]} />
                   <Bar dataKey="actualEfficiency" name="Actual" fill="#16a34a" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>

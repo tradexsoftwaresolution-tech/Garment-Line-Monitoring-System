@@ -24,7 +24,7 @@ import { Card, KpiCard, PageHeader } from "../components/ops-ui";
 const COLORS = {
   present: "#16a34a",
   late: "#d97706",
-  leave: "#2563eb",
+  leave: "#263574",
   absent: "#dc2626",
   face: "#7c3aed",
   fingerprint: "#0f766e",

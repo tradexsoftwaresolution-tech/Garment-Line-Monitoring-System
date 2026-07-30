@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
+import {
+  currentAttendanceDateKey,
+  isDateKeyInAttendanceDay,
+} from "../alert-dates";
 import { useOperations } from "../operations-context";
 import { StatusBadge } from "../components/ops-ui";
 
 export function DisplayModePage() {
-  const { lines, alerts, workers, announcements } = useOperations();
+  const { lines, alerts, workers, announcements, attendanceOverview } = useOperations();
   const [announcementIndex, setAnnouncementIndex] = useState(0);
   const [now, setNow] = useState(new Date());
 
@@ -17,7 +21,14 @@ export function DisplayModePage() {
   }, [announcements.length]);
 
   const missingWorkers = workers.filter((worker) => worker.attendanceStatus === "Absent").length;
-  const openAlerts = alerts.filter((alert) => alert.status !== "Resolved").slice(0, 4);
+  const activeAlertDate = attendanceOverview.attendanceDate || currentAttendanceDateKey();
+  const openAlerts = alerts
+    .filter(
+      (alert) =>
+        alert.status !== "Resolved" &&
+        isDateKeyInAttendanceDay(alert.createdAt, activeAlertDate)
+    )
+    .slice(0, 4);
   const currentAnnouncement = announcements[announcementIndex];
 
   const lineCards = useMemo(

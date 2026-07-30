@@ -21,8 +21,13 @@ import {
 } from "@/lib/backend/pipeline-api";
 import type { HikvisionRecognitionEvent } from "@/types/hikvision";
 import type { ZktecoFingerprintEvent } from "@/types/zkteco";
+import {
+  currentAttendanceDateKey,
+  isDateKeyInAttendanceDay,
+} from "../alert-dates";
 import { resolveFingerprintDeviceSummary } from "../fingerprint-device-counts";
 import { useZktecoFingerprintEvents } from "../hooks/use-zkteco-fingerprint-events";
+import { useAuth } from "../auth";
 import {
   Bar,
   BarChart,
@@ -48,6 +53,7 @@ import {
 } from "../components/ops-ui";
 
 export function ReportsPage() {
+  const { currentUser } = useAuth();
   const {
     attendanceOverview,
     departmentAttendance,
@@ -74,7 +80,12 @@ export function ReportsPage() {
 
   const totalPayout = attendanceSummaries.reduce((sum, item) => sum + item.finalTotal, 0);
   const totalIncentive = attendanceSummaries.reduce((sum, item) => sum + item.incentive, 0);
-  const openAlerts = alerts.filter((item) => item.status !== "Resolved").length;
+  const activeAlertDate = attendanceOverview.attendanceDate || currentAttendanceDateKey();
+  const openAlerts = alerts.filter(
+    (item) =>
+      item.status !== "Resolved" &&
+      isDateKeyInAttendanceDay(item.createdAt, activeAlertDate)
+  ).length;
   const totalTransfers = transferLogs.length;
   const faceAttendedWorkers = workers.filter((worker) => hasFaceAttendance(worker));
   const fingerprintAttendedWorkers = workers.filter((worker) => hasFingerprintAttendance(worker));
@@ -85,6 +96,7 @@ export function ReportsPage() {
   const bothMissingWorkers = workers.filter(
     (worker) => !hasFaceAttendance(worker) && !hasFingerprintAttendance(worker)
   );
+  const canViewIncentiveReports = currentUser.role !== "hr";
   const resolvedFingerprintDeviceSummary = useMemo(
     () => resolveFingerprintDeviceSummary(fingerprintDeviceSummary, zktecoFingerprintEvents),
     [fingerprintDeviceSummary, zktecoFingerprintEvents]
@@ -144,9 +156,13 @@ export function ReportsPage() {
       ["Attendance", "Unregistered fingerprint PINs", `${resolvedFingerprintDeviceSummary.unregisteredDevicePins}`],
       ["Attendance", "Absent today", `${attendanceOverview.absentWorkers}`],
       ["Attendance", "On leave today", `${attendanceOverview.onLeaveWorkers}`],
-      ["Payroll", "Estimated payout", formatCurrency(totalPayout)],
-      ["Payroll", "Estimated incentive pool", formatCurrency(totalIncentive)],
-      ["Alerts", "Open alerts", `${openAlerts}`],
+      ...(canViewIncentiveReports
+        ? [
+            ["Payroll", "Estimated payout", formatCurrency(totalPayout)],
+            ["Payroll", "Estimated incentive pool", formatCurrency(totalIncentive)],
+          ]
+        : []),
+      ["Alerts", "Open alerts today", `${openAlerts}`],
       ["Transfers", "Transfer logs", `${totalTransfers}`],
       ...departmentAttendance.map((department) => [
         "Department Attendance",
@@ -159,6 +175,7 @@ export function ReportsPage() {
       attendanceOverview.lateWorkers,
       attendanceOverview.onLeaveWorkers,
       attendanceOverview.presentWorkers,
+      canViewIncentiveReports,
       departmentAttendance,
       openAlerts,
       resolvedFingerprintDeviceSummary.registeredDevicePins,
@@ -309,18 +326,20 @@ export function ReportsPage() {
           accent="var(--ops-primary)"
           soft="var(--ops-primary-soft)"
         />
-        <KpiCard
-          label="Monthly Incentive"
-          value={formatCurrency(totalIncentive)}
-          meta="Current monthly incentive calculation across eligible attendance records."
-          icon={HandCoins}
-          accent="var(--ops-success)"
-          soft="var(--ops-success-soft)"
-        />
+        {canViewIncentiveReports ? (
+          <KpiCard
+            label="Monthly Incentive"
+            value={formatCurrency(totalIncentive)}
+            meta="Current monthly incentive calculation across eligible attendance records."
+            icon={HandCoins}
+            accent="var(--ops-success)"
+            soft="var(--ops-success-soft)"
+          />
+        ) : null}
         <KpiCard
           label="Open Alerts"
           value={`${openAlerts}`}
-          meta="Operational alerts still open across attendance, lines, and exception handling."
+          meta="Today's operational alerts still open across attendance, lines, and exception handling."
           icon={Printer}
           accent="var(--ops-danger)"
           soft="var(--ops-danger-soft)"
@@ -619,7 +638,7 @@ export function ReportsPage() {
                 <YAxis tickLine={false} axisLine={false} />
                 <Tooltip />
                 <Legend />
-                <Bar dataKey="value" name="Came Today" fill="#2563eb" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="value" name="Came Today" fill="#263574" radius={[6, 6, 0, 0]} />
                 <Bar dataKey="secondaryValue" name="Total Staff" fill="#94a3b8" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>

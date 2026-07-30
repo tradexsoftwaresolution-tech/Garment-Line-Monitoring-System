@@ -6,6 +6,7 @@ import type {
   AuditLogEntry,
   DepartmentRecord,
   DepartmentAttendanceSummary,
+  EmployeeType,
   FaceEvent,
   FingerprintDeviceSummary,
   FingerprintEvent,
@@ -58,6 +59,7 @@ import {
   listProfiles,
   listTransferLogs,
   runAssignWorkerToLineRpc,
+  runConvertEmployeeToPermanentRpc,
   runReactivateEmployeeRpc,
   runResignEmployeeRpc,
   runSetEmployeeInactiveRpc,
@@ -96,6 +98,7 @@ const ATTENDANCE_TIME_ZONE = "Asia/Colombo";
 
 export type WorkerHrDetailsInput = {
   employeeCode: string;
+  employeeType?: EmployeeType | null;
   epfNo?: string | null;
   fullName: string;
   departmentId?: string | null;
@@ -152,6 +155,53 @@ function normalizeDepartmentCode(value: string | null | undefined, fallbackName?
 function normalizeEmployeeCode(value: string | null | undefined) {
   const normalized = cleanText(value)?.replace(/\s+/g, "");
   return normalized || "";
+}
+
+function normalizeEmployeeType(
+  value: string | null | undefined,
+  employeeCode?: string | null
+): EmployeeType {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[-\s]+/g, "_");
+
+  if (normalized === "new_joiner" || normalized === "new" || normalized === "newjoiner") {
+    return "new_joiner";
+  }
+
+  if (normalized === "intern" || normalized === "interns") {
+    return "intern";
+  }
+
+  if (normalized === "permanent") {
+    return "permanent";
+  }
+
+  const code = normalizeEmployeeCode(employeeCode);
+  if (code.startsWith("101")) return "new_joiner";
+  if (code.startsWith("303")) return "intern";
+  return "permanent";
+}
+
+function validateEmployeeUniqueKey(employeeType: EmployeeType, employeeCode: string) {
+  if (!employeeCode) {
+    return "Employee number is required.";
+  }
+
+  if (employeeType === "new_joiner" && !employeeCode.startsWith("101")) {
+    return "New joiner unique key must start with 101.";
+  }
+
+  if (employeeType === "intern" && !employeeCode.startsWith("303")) {
+    return "Intern unique key must start with 303.";
+  }
+
+  return null;
+}
+
+function epfForEmployeeType(employeeType: EmployeeType, employeeCode: string, epfNo?: string | null) {
+  return employeeType === "permanent" ? employeeCode : cleanText(epfNo);
 }
 
 function withManualAttendanceOverrideFlag(value: Json | null): Json {
@@ -1343,6 +1393,7 @@ export async function getOperationsSnapshot(
     return {
       id: employee.id,
       employeeId: employee.employee_code,
+      employeeType: normalizeEmployeeType(employee.employee_category, employee.employee_code),
       epfNo: employee.epf_no || undefined,
       fullName:
         employee.display_name ||
@@ -1844,14 +1895,16 @@ export async function createWorkerProfile(
   args: WorkerHrDetailsInput
 ): Promise<OperationsActionResult> {
   const employeeCode = normalizeEmployeeCode(args.employeeCode);
+  const employeeType = normalizeEmployeeType(args.employeeType, employeeCode);
   const fullName = cleanText(args.fullName);
   const departmentId = cleanText(args.departmentId);
   const department = cleanText(args.department) || "Unassigned";
   const roleTitle = cleanText(args.roleTitle) || "Worker";
   const hireDate = cleanText(args.hireDate);
+  const keyValidationMessage = validateEmployeeUniqueKey(employeeType, employeeCode);
 
-  if (!employeeCode) {
-    return { ok: false, message: "Employee number is required." };
+  if (keyValidationMessage) {
+    return { ok: false, message: keyValidationMessage };
   }
 
   if (!fullName) {
@@ -1860,7 +1913,8 @@ export async function createWorkerProfile(
 
   const employee = await createEmployee(client, {
     employee_code: employeeCode,
-    epf_no: cleanText(args.epfNo),
+    employee_category: employeeType,
+    epf_no: epfForEmployeeType(employeeType, employeeCode, args.epfNo),
     display_name: fullName,
     designation: roleTitle,
     department_id: departmentId,
@@ -1895,6 +1949,8 @@ export async function createWorkerProfile(
     entityId: employee.id,
     newValue: {
       employee_code: employee.employee_code,
+      employee_category: employee.employee_category,
+      epf_no: employee.epf_no,
       display_name: employee.display_name,
       department_name: employee.department_name,
       department_id: employee.department_id,
@@ -1914,14 +1970,16 @@ export async function updateWorkerHrDetails(
   args: WorkerHrDetailsInput & { employeeId: string }
 ): Promise<OperationsActionResult> {
   const employeeCode = normalizeEmployeeCode(args.employeeCode);
+  const employeeType = normalizeEmployeeType(args.employeeType, employeeCode);
   const fullName = cleanText(args.fullName);
   const departmentId = cleanText(args.departmentId);
   const department = cleanText(args.department) || "Unassigned";
   const roleTitle = cleanText(args.roleTitle) || "Worker";
   const hireDate = cleanText(args.hireDate);
+  const keyValidationMessage = validateEmployeeUniqueKey(employeeType, employeeCode);
 
-  if (!employeeCode) {
-    return { ok: false, message: "Employee number is required." };
+  if (keyValidationMessage) {
+    return { ok: false, message: keyValidationMessage };
   }
 
   if (!fullName) {
@@ -1930,7 +1988,8 @@ export async function updateWorkerHrDetails(
 
   const updated = await updateEmployee(client, args.employeeId, {
     employee_code: employeeCode,
-    epf_no: cleanText(args.epfNo),
+    employee_category: employeeType,
+    epf_no: epfForEmployeeType(employeeType, employeeCode, args.epfNo),
     display_name: fullName,
     designation: roleTitle,
     department_id: departmentId,
@@ -1954,6 +2013,8 @@ export async function updateWorkerHrDetails(
     entityId: args.employeeId,
     newValue: {
       employee_code: updated.employee_code,
+      employee_category: updated.employee_category,
+      epf_no: updated.epf_no,
       display_name: updated.display_name,
       department_name: updated.department_name,
       department_id: updated.department_id,
@@ -1966,6 +2027,49 @@ export async function updateWorkerHrDetails(
   return {
     ok: true,
     message: `${updated.display_name || updated.employee_code} HR details updated.`,
+  };
+}
+
+export async function convertWorkerToPermanentProfile(
+  client: AppSupabaseClient,
+  args: {
+    employeeId: string;
+    epfNo: string;
+    effectiveDate?: string | null;
+    hrNotes?: string | null;
+  }
+): Promise<OperationsActionResult> {
+  const epfNo = normalizeEmployeeCode(args.epfNo);
+  const effectiveDate = cleanText(args.effectiveDate) || currentAttendanceDate();
+  const hrNotes = cleanText(args.hrNotes);
+
+  if (!epfNo) {
+    return { ok: false, message: "Official EPF number is required." };
+  }
+
+  if (epfNo.startsWith("101") || epfNo.startsWith("303")) {
+    return {
+      ok: false,
+      message: "Permanent EPF number cannot use temporary 101 or 303 prefixes.",
+    };
+  }
+
+  const result = await runConvertEmployeeToPermanentRpc(client, {
+    employeeId: args.employeeId,
+    epfNo,
+    effectiveDate,
+    hrNotes,
+  });
+
+  const oldCode = result.old_employee_code
+    ? ` from temporary key ${result.old_employee_code}`
+    : "";
+
+  return {
+    ok: true,
+    message: `Converted${oldCode} to permanent EPF ${
+      result.new_employee_code || epfNo
+    }. ${result.queued_device_actions || 0} biometric cleanup action(s) queued.`,
   };
 }
 

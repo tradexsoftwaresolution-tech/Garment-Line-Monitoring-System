@@ -34,6 +34,53 @@ function isMissingRelationError(error: { code?: string; message?: string }) {
   );
 }
 
+const optionalEmployeeWriteColumns = new Set([
+  "department_id",
+  "employee_category",
+  "employment_status",
+  "hire_date",
+  "hr_notes",
+  "resigned_at",
+  "resignation_reason",
+]);
+
+function getMissingEmployeeWriteColumn(error: {
+  code?: string;
+  message?: string;
+}) {
+  const message = error.message || "";
+
+  if (error.code !== "PGRST204" && !message.includes("schema cache")) {
+    return null;
+  }
+
+  const match = message.match(/'([^']+)'\s+column of\s+'employees'/i);
+  const column = match?.[1];
+
+  if (!column || !optionalEmployeeWriteColumns.has(column)) {
+    return null;
+  }
+
+  return column;
+}
+
+function omitEmployeeWriteColumn<
+  T extends Database["public"]["Tables"]["employees"]["Insert"] |
+    Database["public"]["Tables"]["employees"]["Update"],
+>(payload: T, column: string) {
+  const { [column]: _omitted, ...fallbackPayload } = payload as Record<
+    string,
+    unknown
+  >;
+
+  return fallbackPayload as T;
+}
+
+function isOperationalEmployee(row: EmployeeRow) {
+  const status = String(row.employment_status || "active").trim().toLowerCase();
+  return status === "active";
+}
+
 export async function listProfiles(client: AppSupabaseClient) {
   const { data, error } = await client
     .from("profiles")
@@ -59,7 +106,7 @@ export async function listEmployees(client: AppSupabaseClient) {
     throw new Error(error.message);
   }
 
-  return (data || []) as EmployeeRow[];
+  return ((data || []) as EmployeeRow[]).filter(isOperationalEmployee);
 }
 
 export async function listDepartments(client: AppSupabaseClient) {
@@ -135,17 +182,29 @@ export async function createEmployee(
   client: AppSupabaseClient,
   payload: Database["public"]["Tables"]["employees"]["Insert"]
 ) {
-  const { data, error } = await client
-    .from("employees")
-    .insert(payload)
-    .select("*")
-    .single();
+  let nextPayload = payload;
 
-  if (error) {
-    throw new Error(error.message);
+  for (let attempt = 0; attempt < optionalEmployeeWriteColumns.size + 1; attempt += 1) {
+    const { data, error } = await client
+      .from("employees")
+      .insert(nextPayload)
+      .select("*")
+      .single();
+
+    if (!error) {
+      return data as EmployeeRow;
+    }
+
+    const missingColumn = getMissingEmployeeWriteColumn(error);
+
+    if (!missingColumn || !(missingColumn in nextPayload)) {
+      throw new Error(error.message);
+    }
+
+    nextPayload = omitEmployeeWriteColumn(nextPayload, missingColumn);
   }
 
-  return data as EmployeeRow;
+  throw new Error("Employee could not be created because the database schema is incomplete.");
 }
 
 export async function updateEmployee(
@@ -153,18 +212,30 @@ export async function updateEmployee(
   employeeId: string,
   payload: Database["public"]["Tables"]["employees"]["Update"]
 ) {
-  const { data, error } = await client
-    .from("employees")
-    .update(payload)
-    .eq("id", employeeId)
-    .select("*")
-    .single();
+  let nextPayload = payload;
 
-  if (error) {
-    throw new Error(error.message);
+  for (let attempt = 0; attempt < optionalEmployeeWriteColumns.size + 1; attempt += 1) {
+    const { data, error } = await client
+      .from("employees")
+      .update(nextPayload)
+      .eq("id", employeeId)
+      .select("*")
+      .single();
+
+    if (!error) {
+      return data as EmployeeRow;
+    }
+
+    const missingColumn = getMissingEmployeeWriteColumn(error);
+
+    if (!missingColumn || !(missingColumn in nextPayload)) {
+      throw new Error(error.message);
+    }
+
+    nextPayload = omitEmployeeWriteColumn(nextPayload, missingColumn);
   }
 
-  return data as EmployeeRow;
+  throw new Error("Employee could not be updated because the database schema is incomplete.");
 }
 
 export async function listEmployeeProfiles(client: AppSupabaseClient) {
@@ -768,6 +839,40 @@ export async function runResignEmployeeRpc(
   }
 
   return data as { ok?: boolean; closed_assignments?: number };
+}
+
+export async function runConvertEmployeeToPermanentRpc(
+  client: AppSupabaseClient,
+  args: {
+    employeeId: string;
+    epfNo: string;
+    effectiveDate?: string | null;
+    hrNotes?: string | null;
+  }
+) {
+  const { data, error } = await client.rpc("rpc_convert_employee_to_permanent", {
+    p_employee_id: args.employeeId,
+    p_epf_no: args.epfNo,
+    p_effective_date: args.effectiveDate || null,
+    p_hr_notes: args.hrNotes || null,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data as {
+    ok?: boolean;
+    old_employee_code?: string;
+    new_employee_code?: string;
+    updated_reconciliation_rows?: number;
+    updated_fingerprint_daily_rows?: number;
+    updated_face_daily_rows?: number;
+    updated_face_import_rows?: number;
+    updated_hikvision_events?: number;
+    updated_zkteco_events?: number;
+    queued_device_actions?: number;
+  };
 }
 
 export async function runReactivateEmployeeRpc(

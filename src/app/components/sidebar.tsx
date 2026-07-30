@@ -2,6 +2,8 @@ import { Users, LayoutDashboard, ClipboardList, Settings, BarChart3, LogOut } fr
 import { Link, useLocation } from "react-router";
 import { useState } from "react";
 
+const clientLogoSrc = "/brand/union-north-logo.png";
+
 export function Sidebar() {
   const location = useLocation();
   const [signOutHover, setSignOutHover] = useState(false);
@@ -36,23 +38,22 @@ export function Sidebar() {
         {/* ── Logo ── */}
         <div style={{ padding: "20px 18px", borderBottom: "1px solid #E2E4EA" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div
+            <img
+              src={clientLogoSrc}
+              alt=""
               style={{
                 width: 34,
                 height: 34,
-                background: "#2563EB",
-                borderRadius: 10,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
+                borderRadius: "50%",
+                display: "block",
+                objectFit: "cover",
                 flexShrink: 0,
+                boxShadow: "0 12px 22px rgba(38, 53, 116, 0.22)",
               }}
-            >
-              <LayoutDashboard style={{ width: 18, height: 18, color: "#FFFFFF" }} />
-            </div>
+            />
             <div>
               <div style={{ fontSize: 14, fontWeight: 600, color: "#111318", letterSpacing: "-0.2px" }}>
-                Line<span style={{ color: "#2563EB" }}>Matrix</span>
+                Line<span style={{ color: "#263574" }}>Matrix</span>
               </div>
               <div style={{ fontSize: 11, color: "#8B90A0", marginTop: 1 }}>Factory Monitor</div>
             </div>
@@ -94,7 +95,7 @@ export function Sidebar() {
                   marginBottom: 2,
                   textDecoration: "none",
                   transition: "background 0.15s",
-                  background: isActive ? "#2563EB" : "transparent",
+                  background: isActive ? "#263574" : "transparent",
                   color: isActive ? "#FFFFFF" : "#4B5063",
                 }}
                 onMouseEnter={(e) => {
