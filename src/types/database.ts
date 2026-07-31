@@ -1159,6 +1159,15 @@ export interface Database {
         };
         Returns: Json;
       };
+      rpc_resign_employee: {
+        Args: {
+          p_employee_id: string;
+          p_resigned_at?: string | null;
+          p_reason?: string | null;
+          p_hr_notes?: string | null;
+        };
+        Returns: Json;
+      };
       rpc_convert_employee_to_permanent: {
         Args: {
           p_employee_id: string;

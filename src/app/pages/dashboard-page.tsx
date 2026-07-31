@@ -1,12 +1,14 @@
 import { useMemo } from "react";
 import { Link } from "react-router";
-import { AlertTriangle, Clock3, Fingerprint, ShieldCheck, Users } from "lucide-react";
+import { AlertTriangle, Clock3, Fingerprint, ScanFace, ShieldCheck, Users } from "lucide-react";
 import {
   currentAttendanceDateKey,
   isDateKeyInAttendanceDay,
 } from "../alert-dates";
 import { useAuth } from "../auth";
+import { buildHikvisionFaceEventSummary } from "../face-event-counts";
 import { resolveFingerprintDeviceSummary } from "../fingerprint-device-counts";
+import { useHikvisionFaceEvents } from "../hooks/use-hikvision-face-events";
 import { useZktecoFingerprintEvents } from "../hooks/use-zkteco-fingerprint-events";
 import { useOperations } from "../operations-context";
 import { IeDashboardPage } from "./ie-dashboard-page";
@@ -38,21 +40,30 @@ export function DashboardPage() {
     departmentAttendance,
     alerts,
     lines,
+    workers,
     fingerprintDeviceSummary,
   } = useOperations();
 
   const isIeUser = currentUser.role === "ie";
   const isHrUser = currentUser.role === "hr";
+  const { events: hikvisionFaceEvents } = useHikvisionFaceEvents(500, !isIeUser);
   const { events: zktecoFingerprintEvents } = useZktecoFingerprintEvents(5000, !isIeUser);
   const resolvedFingerprintDeviceSummary = useMemo(
     () => resolveFingerprintDeviceSummary(fingerprintDeviceSummary, zktecoFingerprintEvents),
     [fingerprintDeviceSummary, zktecoFingerprintEvents]
+  );
+  const faceEventSummary = useMemo(
+    () => buildHikvisionFaceEventSummary(hikvisionFaceEvents, attendanceOverview.attendanceDate),
+    [attendanceOverview.attendanceDate, hikvisionFaceEvents]
   );
   const latestAttendanceDateLabel = formatAttendanceDate(attendanceOverview.attendanceDate);
   const activeAlertDate = attendanceOverview.attendanceDate || currentAttendanceDateKey();
   const clockedInToday = attendanceOverview.presentWorkers + attendanceOverview.lateWorkers;
   const fingerprintDeviceCount =
     resolvedFingerprintDeviceSummary.totalDevicePins || clockedInToday;
+  const faceAttended = workers.filter(
+    (worker) => worker.faceVerificationStatus === "Verified"
+  ).length;
   const openAlerts = alerts.filter(
     (alert) =>
       alert.status !== "Resolved" &&
@@ -79,7 +90,7 @@ export function DashboardPage() {
     <div className="ops-page">
       <PageHeader
         title="Attendance Dashboard"
-        subtitle="Fingerprint-first operations overview with current headcount, department attendance, and line readiness."
+        subtitle="Biometric operations overview with current headcount, department attendance, and line readiness."
         actions={
           <>
             <Link to="/production-lines" className="ops-button ops-button-secondary">
@@ -108,6 +119,14 @@ export function DashboardPage() {
           icon={Clock3}
           accent="var(--ops-success)"
           soft="var(--ops-success-soft)"
+        />
+        <KpiCard
+          label="Face Count"
+          value={`${faceAttended}/${attendanceOverview.totalWorkers}`}
+          meta={`${faceAttended} matched workers, ${faceEventSummary.unmatchedEvents} unmatched face events.`}
+          icon={ScanFace}
+          accent="var(--ops-warning)"
+          soft="var(--ops-warning-soft)"
         />
         <KpiCard
           label="On Leave"
