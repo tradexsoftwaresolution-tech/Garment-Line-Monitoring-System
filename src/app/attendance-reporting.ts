@@ -76,12 +76,31 @@ export const ATTENDANCE_MISSING_SIGNAL_FILTERS: Array<{
   { value: "both-missing", label: "Both not attended" },
 ];
 
-export function hasFaceAttendance(worker: WorkerProfile) {
+export type FaceFingerprintMismatchKind =
+  | "camera-missed"
+  | "fingerprint-missed"
+  | "none";
+
+type FaceVerificationWorker = { faceVerificationStatus?: string };
+type FingerprintVerificationWorker = { fingerprintVerificationStatus?: string };
+
+export function hasFaceAttendance(worker: FaceVerificationWorker) {
   return worker.faceVerificationStatus === "Verified";
 }
 
-export function hasFingerprintAttendance(worker: WorkerProfile) {
+export function hasFingerprintAttendance(worker: FingerprintVerificationWorker) {
   return worker.fingerprintVerificationStatus === "Verified";
+}
+
+export function getFaceFingerprintMismatch(
+  worker: FaceVerificationWorker & FingerprintVerificationWorker
+): FaceFingerprintMismatchKind {
+  const hasFace = hasFaceAttendance(worker);
+  const hasFingerprint = hasFingerprintAttendance(worker);
+
+  if (hasFingerprint && !hasFace) return "camera-missed";
+  if (hasFace && !hasFingerprint) return "fingerprint-missed";
+  return "none";
 }
 
 export function matchesAttendanceReportFilter(

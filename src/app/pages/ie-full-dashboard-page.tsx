@@ -19,6 +19,7 @@ import { DetailDrawer, StatusBadge, WorkerChip, attendanceTone } from "../compon
 import {
   ATTENDANCE_MISSING_SIGNAL_FILTERS,
   type AttendanceReportFilter,
+  getFaceFingerprintMismatch as mismatchKind,
   matchesAttendanceReportFilter,
 } from "../attendance-reporting";
 import { buildHikvisionFaceEventSummary } from "../face-event-counts";
@@ -27,7 +28,6 @@ import type { FaceEvent, ProductionLineRecord, WorkerProfile } from "../types";
 
 type Tone = "good" | "warning" | "danger" | "info" | "neutral";
 type TabId = "today" | "mismatch" | "employees" | "lines";
-type MismatchKind = "camera-missed" | "fingerprint-missed" | "none";
 type MismatchFilter = "all" | "camera-missed" | "unregistered-face" | "unknown-face" | "fingerprint-missed";
 type EmployeeFilter = "attention" | "attended" | "absent" | "late" | "present";
 
@@ -136,18 +136,6 @@ function isVerified(value?: string) {
 
 function yesNo(value: boolean) {
   return value ? "Yes" : "No";
-}
-
-function mismatchKind(worker: {
-  faceVerificationStatus: string;
-  fingerprintVerificationStatus: string;
-}): MismatchKind {
-  const fingerprintVerified = isVerified(worker.fingerprintVerificationStatus);
-  const faceVerified = isVerified(worker.faceVerificationStatus);
-
-  if (fingerprintVerified && !faceVerified) return "camera-missed";
-  if (faceVerified && !fingerprintVerified) return "fingerprint-missed";
-  return "none";
 }
 
 function mismatchLabel(worker: {
@@ -484,12 +472,13 @@ export function IeFullDashboardPage() {
       }),
     [lineRows]
   );
-  const mismatchReviewCount = mismatchWorkers.length + unregisteredFaceEvents.length + unknownFaceEvents.length;
+  const mismatchReviewCount = mismatchWorkers.length + unregisteredFaceEvents.length;
   const filteredMismatchCount =
-    filteredRegisteredCameraMissedWorkers.length +
-    filteredRegisteredFingerprintMissedWorkers.length +
-    filteredUnregisteredFaceEvents.length +
-    filteredUnknownFaceEvents.length;
+    mismatchFilter === "unknown-face"
+      ? filteredUnknownFaceEvents.length
+      : filteredRegisteredCameraMissedWorkers.length +
+        filteredRegisteredFingerprintMissedWorkers.length +
+        filteredUnregisteredFaceEvents.length;
 
   const urgentIssues = useMemo<Issue[]>(() => {
     const issues: Issue[] = [];
@@ -499,7 +488,7 @@ export function IeFullDashboardPage() {
       issues.push({
         id: "employee-mismatches",
         title: `${plural(mismatchReviewCount, "mismatch", "mismatches")} to review`,
-        detail: `${registeredCameraMissedWorkers.length} camera missed, ${unregisteredFaceEvents.length} not registered, ${unknownFaceEvents.length} unknown face, ${registeredFingerprintMissedWorkers.length} fingerprint missed`,
+        detail: `${registeredCameraMissedWorkers.length} camera missed, ${unregisteredFaceEvents.length} not registered, ${registeredFingerprintMissedWorkers.length} fingerprint missed`,
         tone: "danger",
       });
     }
@@ -559,7 +548,6 @@ export function IeFullDashboardPage() {
     redLines,
     registeredCameraMissedWorkers.length,
     registeredFingerprintMissedWorkers.length,
-    unknownFaceEvents.length,
     unregisteredFaceEvents.length,
     unmatchedAttendanceChecks,
   ]);
@@ -571,7 +559,7 @@ export function IeFullDashboardPage() {
   const hasMoreMismatchRows =
     filteredRegisteredCameraMissedWorkers.length > visibleCameraMissedWorkers.length ||
     filteredUnregisteredFaceEvents.length > visibleUnregisteredFaceEvents.length ||
-    filteredUnknownFaceEvents.length > visibleUnknownFaceEvents.length ||
+    (mismatchFilter === "unknown-face" && filteredUnknownFaceEvents.length > visibleUnknownFaceEvents.length) ||
     filteredRegisteredFingerprintMissedWorkers.length > visibleFingerprintMissedWorkers.length;
   const visibleEmployeeRows = employeeRows.slice(0, employeeVisibleCount);
   const selectedWorker = selectedWorkerId ? workers.find((worker) => worker.id === selectedWorkerId) : undefined;
@@ -1028,7 +1016,7 @@ export function IeFullDashboardPage() {
                   </section>
                 ) : null}
 
-                {mismatchFilter === "all" || mismatchFilter === "unknown-face" ? (
+                {mismatchFilter === "unknown-face" ? (
                   <section className="ops-ceo-mismatch-group">
                     <div className="ops-ceo-subsection-heading">
                       <div>
@@ -1095,7 +1083,7 @@ export function IeFullDashboardPage() {
             ) : (
               <article className="ops-ceo-empty-card">
                 <CheckCircle2 size={22} />
-                No fingerprint and face mismatches
+                {mismatchFilter === "unknown-face" ? "No unknown face events" : "No fingerprint and face mismatches"}
               </article>
             )}
 

@@ -1,6 +1,11 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { AlertTriangle, Clock3, Fingerprint, ScanFace, ShieldCheck, Users } from "lucide-react";
+import {
+  getFaceFingerprintMismatch,
+  hasFaceAttendance,
+  hasFingerprintAttendance,
+} from "../attendance-reporting";
 import {
   currentAttendanceDateKey,
   isDateKeyInAttendanceDay,
@@ -10,15 +15,34 @@ import { buildHikvisionFaceEventSummary } from "../face-event-counts";
 import { resolveFingerprintDeviceSummary } from "../fingerprint-device-counts";
 import { useHikvisionFaceEvents } from "../hooks/use-hikvision-face-events";
 import { useZktecoFingerprintEvents } from "../hooks/use-zkteco-fingerprint-events";
-import { useOperations } from "../operations-context";
+import { findLine, useOperations } from "../operations-context";
 import { IeDashboardPage } from "./ie-dashboard-page";
 import {
   AlertItem,
   Card,
+  DetailModal,
+  EmptyState,
   KpiCard,
   PageHeader,
   StatusBadge,
+  WorkerChip,
+  attendanceTone,
 } from "../components/ops-ui";
+import type { WorkerProfile } from "../types";
+
+type HrKpiId =
+  | "total-workforce"
+  | "fingerprint-attended"
+  | "face-attended"
+  | "on-leave"
+  | "open-alerts"
+  | "biometric-mismatch";
+
+type HrKpiDetail = {
+  title: string;
+  subtitle: string;
+  workers: WorkerProfile[];
+};
 
 function formatAttendanceDate(value: string) {
   if (!value) {
@@ -33,8 +57,15 @@ function formatAttendanceDate(value: string) {
   });
 }
 
+function mismatchLabel(worker: WorkerProfile) {
+  const mismatch = getFaceFingerprintMismatch(worker);
+  if (mismatch === "camera-missed") return "Face not detected";
+  if (mismatch === "fingerprint-missed") return "Fingerprint not detected";
+  return "No mismatch";
+}
+
 export function DashboardPage() {
-  const { currentUser } = useAuth();
+  const { currentUser, canAccess } = useAuth();
   const {
     attendanceOverview,
     departmentAttendance,
@@ -43,6 +74,7 @@ export function DashboardPage() {
     workers,
     fingerprintDeviceSummary,
   } = useOperations();
+  const [selectedHrKpi, setSelectedHrKpi] = useState<HrKpiId | null>(null);
 
   const isIeUser = currentUser.role === "ie";
   const isHrUser = currentUser.role === "hr";
@@ -61,14 +93,42 @@ export function DashboardPage() {
   const clockedInToday = attendanceOverview.presentWorkers + attendanceOverview.lateWorkers;
   const fingerprintDeviceCount =
     resolvedFingerprintDeviceSummary.totalDevicePins || clockedInToday;
-  const faceAttended = workers.filter(
-    (worker) => worker.faceVerificationStatus === "Verified"
-  ).length;
-  const openAlerts = alerts.filter(
-    (alert) =>
-      alert.status !== "Resolved" &&
-      isDateKeyInAttendanceDay(alert.createdAt, activeAlertDate)
+  const fingerprintAttendedWorkers = useMemo(
+    () => workers.filter(hasFingerprintAttendance),
+    [workers]
   );
+  const faceAttendedWorkers = useMemo(
+    () => workers.filter(hasFaceAttendance),
+    [workers]
+  );
+  const onLeaveWorkers = useMemo(
+    () => workers.filter((worker) => worker.attendanceStatus === "On Leave"),
+    [workers]
+  );
+  const biometricMismatchWorkers = useMemo(
+    () =>
+      workers.filter(
+        (worker) => getFaceFingerprintMismatch(worker) !== "none"
+      ),
+    [workers]
+  );
+  const openAlerts = useMemo(
+    () =>
+      alerts.filter(
+        (alert) =>
+          alert.status !== "Resolved" &&
+          isDateKeyInAttendanceDay(alert.createdAt, activeAlertDate)
+      ),
+    [activeAlertDate, alerts]
+  );
+  const openAlertWorkers = useMemo(() => {
+    const workerIds = new Set(
+      openAlerts
+        .map((alert) => alert.workerId)
+        .filter((workerId): workerId is string => Boolean(workerId))
+    );
+    return workers.filter((worker) => workerIds.has(worker.id));
+  }, [openAlerts, workers]);
   const lineCoverage = useMemo(
     () =>
       [...lines]
@@ -81,6 +141,50 @@ export function DashboardPage() {
         .slice(0, 6),
     [lines]
   );
+  const hrKpiDetails = useMemo<Record<HrKpiId, HrKpiDetail>>(
+    () => ({
+      "total-workforce": {
+        title: "Total Workforce",
+        subtitle: "All active workers in the current attendance roster.",
+        workers,
+      },
+      "fingerprint-attended": {
+        title: "Fingerprint Device Count",
+        subtitle: "Registered workers with a verified fingerprint attendance signal.",
+        workers: fingerprintAttendedWorkers,
+      },
+      "face-attended": {
+        title: "Face Count",
+        subtitle: "Workers with a verified face attendance signal.",
+        workers: faceAttendedWorkers,
+      },
+      "on-leave": {
+        title: "On Leave",
+        subtitle: "Workers marked on leave in the current attendance snapshot.",
+        workers: onLeaveWorkers,
+      },
+      "open-alerts": {
+        title: "Workers with Open Alerts",
+        subtitle: "Workers linked to today's unresolved attendance and operations alerts.",
+        workers: openAlertWorkers,
+      },
+      "biometric-mismatch": {
+        title: "Face / Fingerprint Mismatch",
+        subtitle: "Workers detected by exactly one of the two biometric attendance channels.",
+        workers: biometricMismatchWorkers,
+      },
+    }),
+    [
+      biometricMismatchWorkers,
+      faceAttendedWorkers,
+      fingerprintAttendedWorkers,
+      onLeaveWorkers,
+      openAlertWorkers,
+      workers,
+    ]
+  );
+  const selectedHrKpiDetail = selectedHrKpi ? hrKpiDetails[selectedHrKpi] : null;
+  const closeHrKpiModal = useCallback(() => setSelectedHrKpi(null), []);
 
   if (isIeUser) {
     return <IeDashboardPage />;
@@ -93,12 +197,16 @@ export function DashboardPage() {
         subtitle="Biometric operations overview with current headcount, department attendance, and line readiness."
         actions={
           <>
-            <Link to="/production-lines" className="ops-button ops-button-secondary">
-              Production Lines
-            </Link>
-            <Link to="/reports" className="ops-button ops-button-primary">
-              Open Reports
-            </Link>
+            {canAccess("productionLines") ? (
+              <Link to="/production-lines" className="ops-button ops-button-secondary">
+                Production Lines
+              </Link>
+            ) : null}
+            {canAccess("reports") ? (
+              <Link to="/reports" className="ops-button ops-button-primary">
+                Open Reports
+              </Link>
+            ) : null}
           </>
         }
       />
@@ -111,6 +219,7 @@ export function DashboardPage() {
           icon={Users}
           accent="var(--ops-primary)"
           soft="var(--ops-primary-soft)"
+          onClick={isHrUser ? () => setSelectedHrKpi("total-workforce") : undefined}
         />
         <KpiCard
           label="Fingerprint Device Count"
@@ -119,14 +228,16 @@ export function DashboardPage() {
           icon={Clock3}
           accent="var(--ops-success)"
           soft="var(--ops-success-soft)"
+          onClick={isHrUser ? () => setSelectedHrKpi("fingerprint-attended") : undefined}
         />
         <KpiCard
           label="Face Count"
-          value={`${faceAttended}/${attendanceOverview.totalWorkers}`}
-          meta={`${faceAttended} matched workers, ${faceEventSummary.unmatchedEvents} unmatched face events.`}
+          value={`${faceAttendedWorkers.length}/${attendanceOverview.totalWorkers}`}
+          meta={`${faceAttendedWorkers.length} matched workers, ${faceEventSummary.unmatchedEvents} unmatched face events.`}
           icon={ScanFace}
           accent="var(--ops-warning)"
           soft="var(--ops-warning-soft)"
+          onClick={isHrUser ? () => setSelectedHrKpi("face-attended") : undefined}
         />
         <KpiCard
           label="On Leave"
@@ -135,7 +246,19 @@ export function DashboardPage() {
           icon={ShieldCheck}
           accent="var(--ops-violet)"
           soft="var(--ops-violet-soft)"
+          onClick={isHrUser ? () => setSelectedHrKpi("on-leave") : undefined}
         />
+        {isHrUser ? (
+          <KpiCard
+            label="Face / Fingerprint Mismatch"
+            value={`${biometricMismatchWorkers.length}`}
+            meta="Fingerprint-only and face-only attendance records that require review."
+            icon={AlertTriangle}
+            accent="var(--ops-danger)"
+            soft="var(--ops-danger-soft)"
+            onClick={() => setSelectedHrKpi("biometric-mismatch")}
+          />
+        ) : null}
         <KpiCard
           label="Open Alerts"
           value={`${openAlerts.length}`}
@@ -143,6 +266,7 @@ export function DashboardPage() {
           icon={AlertTriangle}
           accent="var(--ops-danger)"
           soft="var(--ops-danger-soft)"
+          onClick={isHrUser ? () => setSelectedHrKpi("open-alerts") : undefined}
         />
       </section>
 
@@ -337,6 +461,80 @@ export function DashboardPage() {
           </div>
         </Card>
       </section>
+
+      <DetailModal
+        open={Boolean(selectedHrKpiDetail)}
+        title={selectedHrKpiDetail?.title || "Worker Details"}
+        subtitle={
+          selectedHrKpiDetail
+            ? `${selectedHrKpiDetail.subtitle} ${selectedHrKpiDetail.workers.length} worker(s) for ${latestAttendanceDateLabel}.`
+            : undefined
+        }
+        onClose={closeHrKpiModal}
+      >
+        {selectedHrKpiDetail?.workers.length ? (
+          <div className="ops-table-wrap">
+            <table className="ops-table">
+              <thead>
+                <tr>
+                  <th>Worker</th>
+                  <th>Department / Line</th>
+                  <th>Attendance</th>
+                  <th>Face</th>
+                  <th>Fingerprint</th>
+                  <th>Mismatch</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedHrKpiDetail.workers.map((worker) => {
+                  const line = findLine(lines, worker.currentLineId);
+                  return (
+                    <tr key={worker.id}>
+                      <td>
+                        <WorkerChip worker={worker} />
+                      </td>
+                      <td>
+                        <div className="ops-row-title">{worker.department}</div>
+                        <div className="ops-row-subtitle">{line?.name || "Unassigned"}</div>
+                      </td>
+                      <td>
+                        <StatusBadge
+                          label={worker.attendanceStatus}
+                          tone={attendanceTone(worker.attendanceStatus)}
+                        />
+                      </td>
+                      <td>
+                        <StatusBadge
+                          label={hasFaceAttendance(worker) ? "Attended" : "Not attended"}
+                          tone={hasFaceAttendance(worker) ? "success" : "danger"}
+                        />
+                      </td>
+                      <td>
+                        <StatusBadge
+                          label={hasFingerprintAttendance(worker) ? "Attended" : "Not attended"}
+                          tone={hasFingerprintAttendance(worker) ? "success" : "danger"}
+                        />
+                      </td>
+                      <td>{mismatchLabel(worker)}</td>
+                      <td>
+                        <Link to={`/workers/${worker.id}`} className="ops-link-button">
+                          View Profile
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyState
+            title="No workers in this category"
+            description="The current attendance snapshot has no matching worker records."
+          />
+        )}
+      </DetailModal>
     </div>
   );
 }

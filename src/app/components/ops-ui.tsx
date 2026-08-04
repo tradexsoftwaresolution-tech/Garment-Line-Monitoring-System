@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from "react";
+import { useEffect, useId, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router";
 import { AlertTriangle, ChevronRight, Download, Image, Search, X, type LucideIcon } from "lucide-react";
 import type { AlertPriority, AttendanceStatus, ProductionLineRecord, RiskLevel, ValidationStatus, WorkerProfile } from "../types";
@@ -149,6 +149,8 @@ export function KpiCard({
   icon: Icon,
   accent,
   soft,
+  onClick,
+  ariaLabel,
 }: {
   label: string;
   value: string;
@@ -156,9 +158,11 @@ export function KpiCard({
   icon: LucideIcon;
   accent: string;
   soft: string;
+  onClick?: () => void;
+  ariaLabel?: string;
 }) {
-  return (
-    <div className="ops-kpi-card" style={{ "--kpi-accent": accent, "--kpi-soft": soft } as CSSProperties}>
+  const content = (
+    <>
       <div className="ops-kpi-label">{label}</div>
       <div className="ops-kpi-value-row">
         <div className="ops-kpi-value">{value}</div>
@@ -167,6 +171,28 @@ export function KpiCard({
         </div>
       </div>
       <div className="ops-kpi-meta">{meta}</div>
+    </>
+  );
+
+  const style = { "--kpi-accent": accent, "--kpi-soft": soft } as CSSProperties;
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className="ops-kpi-card ops-kpi-card-action"
+        style={style}
+        onClick={onClick}
+        aria-label={ariaLabel || `View ${label} worker details`}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div className="ops-kpi-card" style={style}>
+      {content}
     </div>
   );
 }
@@ -332,6 +358,71 @@ export function DetailDrawer({
         <div className="ops-drawer-body">{children}</div>
         {footer ? <div className="ops-drawer-footer">{footer}</div> : null}
       </aside>
+    </div>
+  );
+}
+
+export function DetailModal({
+  open,
+  title,
+  subtitle,
+  onClose,
+  footer,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  subtitle?: string;
+  onClose: () => void;
+  footer?: ReactNode;
+  children: ReactNode;
+}) {
+  const titleId = useId();
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, open]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="ops-modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        className="ops-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
+        <div className="ops-modal-header">
+          <div>
+            <h2 id={titleId} className="ops-card-title">{title}</h2>
+            {subtitle ? <div className="ops-card-subtitle">{subtitle}</div> : null}
+          </div>
+          <button className="ops-modal-close" onClick={onClose} aria-label="Close details" autoFocus>
+            <X size={16} />
+          </button>
+        </div>
+        <div className="ops-modal-body">{children}</div>
+        {footer ? <div className="ops-modal-footer">{footer}</div> : null}
+      </section>
     </div>
   );
 }

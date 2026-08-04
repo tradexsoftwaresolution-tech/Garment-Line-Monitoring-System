@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, CheckCheck, Clock3, FileText, RefreshCcw, Send, UserCheck, XCircle } from "lucide-react";
+import { CalendarDays, CheckCheck, Clock3, RefreshCcw, Send, XCircle } from "lucide-react";
 import {
   createLeaveRequestFromBackend,
   getLeaveManagementFromBackend,
@@ -13,7 +13,7 @@ import type {
   LeaveRequestStatus,
   LeaveType,
 } from "@/types/leave-management";
-import { Button, Card, EmptyState, KpiCard, PageHeader, StatusBadge, formatDateTime } from "../components/ops-ui";
+import { Button, Card, EmptyState, KpiCard, PageHeader, StatusBadge } from "../components/ops-ui";
 
 const EMPTY_LEAVE_SNAPSHOT: LeaveManagementSnapshot = {
   employees: [],
@@ -171,7 +171,7 @@ export function LeaveManagementPage() {
     <div className="ops-page">
       <PageHeader
         title="Leave Management"
-        subtitle="HR leave request queue with full-day, half-day, short-leave, reason, approval, and employee history visibility."
+        subtitle="HR leave request queue with full-day, half-day, short-leave, reason, and approval controls."
         actions={
           <Button tone="secondary" onClick={() => void loadLeaveManagement()}>
             <RefreshCcw size={16} />
@@ -195,7 +195,7 @@ export function LeaveManagementPage() {
         <KpiCard
           label="Approved"
           value={`${counts.approved}`}
-          meta="Approved leave records retained for history."
+          meta="Approved leave requests ready for active leave tracking."
           icon={CheckCheck}
           accent="var(--ops-success)"
           soft="var(--ops-success-soft)"
@@ -203,7 +203,7 @@ export function LeaveManagementPage() {
         <KpiCard
           label="Rejected"
           value={`${counts.rejected}`}
-          meta="Rejected requests with HR decision trail."
+          meta="Rejected requests with HR review decisions."
           icon={XCircle}
           accent="var(--ops-danger)"
           soft="var(--ops-danger-soft)"
@@ -463,64 +463,6 @@ export function LeaveManagementPage() {
         </div>
       </Card>
 
-      <Card title="Leave Request History" subtitle="Approved, rejected, pending, and cancelled records for audit and employee profile review.">
-        <div className="ops-table-wrap">
-          <table className="ops-table">
-            <thead>
-              <tr>
-                <th>Employee</th>
-                <th>Leave</th>
-                <th>Date / Time</th>
-                <th>Reason</th>
-                <th>Status</th>
-                <th>Reviewed</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleRequests.map((request) => (
-                <tr key={request.id}>
-                  <td>
-                    <div className="ops-row-title">{request.employeeName}</div>
-                    <div className="ops-row-subtitle">
-                      {request.employeeCode} · {request.designation || "Worker"}
-                    </div>
-                  </td>
-                  <td>
-                    <div className="ops-row-title">{labelize(request.leaveType)}</div>
-                    <div className="ops-row-subtitle">{labelize(request.leaveCategory)}</div>
-                  </td>
-                  <td>
-                    <div className="ops-row-title">
-                      {request.startDate} to {request.endDate}
-                    </div>
-                    <div className="ops-row-subtitle">{formatLeaveDuration(request)}</div>
-                  </td>
-                  <td>{request.reason || "N/A"}</td>
-                  <td>
-                    <StatusBadge label={request.status} tone={statusTone(request.status)} />
-                  </td>
-                  <td>
-                    <div className="ops-row-title">{request.reviewedBy || "Not reviewed"}</div>
-                    <div className="ops-row-subtitle">
-                      {request.reviewedAt ? formatDateTime(request.reviewedAt) : request.requestedBy || "Requested"}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {!visibleRequests.length ? (
-                <tr>
-                  <td colSpan={6}>
-                    <EmptyState
-                      title="No leave requests matched"
-                      description="Change the filters or create a leave request to populate this history."
-                    />
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </Card>
     </div>
   );
 }

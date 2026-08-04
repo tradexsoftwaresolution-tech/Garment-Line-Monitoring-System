@@ -64,7 +64,7 @@ values
     '',
     '',
     '{"provider":"email","providers":["email"]}'::jsonb,
-    '{"full_name":"Malithi Jayasinghe","role":"admin"}'::jsonb,
+    '{"full_name":"Union North Administrator","role":"admin"}'::jsonb,
     now(),
     now()
   ),
@@ -205,7 +205,7 @@ where users.id in (
 
 insert into public.profiles (id, full_name, role, is_active)
 values
-  ('00000000-0000-0000-0000-000000000001', 'Malithi Jayasinghe', 'admin', true),
+  ('00000000-0000-0000-0000-000000000001', 'Union North Administrator', 'admin', true),
   ('00000000-0000-0000-0000-000000000002', 'Dhanushka Perera', 'supervisor', true),
   ('00000000-0000-0000-0000-000000000003', 'Ishara Fernando', 'hr', true),
   ('00000000-0000-0000-0000-000000000004', 'Management Desk', 'viewer', true),

@@ -84,7 +84,7 @@ const navSections: Array<{ label: string; items: NavItem[] }> = [
         path: "/leave-management",
         routeKey: "leaveManagement",
         label: "Leave Management",
-        description: "Requests & history",
+        description: "Requests",
         icon: CalendarCheck,
       },
       {
