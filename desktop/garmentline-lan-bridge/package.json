@@ -1,6 +1,6 @@
 {
   "name": "garmentline-lan-bridge",
-  "version": "2.0.0",
+  "version": "2.1.1",
   "description": "Integration Hub desktop bridge for LineMatrix ZKTeco and Hikvision devices.",
   "main": "electron/main.js",
   "private": true,

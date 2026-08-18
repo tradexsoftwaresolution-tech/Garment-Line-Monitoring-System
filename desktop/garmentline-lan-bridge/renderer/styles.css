@@ -356,6 +356,38 @@ textarea:focus {
   padding-top: 14px;
 }
 
+.recovery-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid rgba(15, 95, 128, 0.2);
+  border-radius: 8px;
+  background: var(--info-bg);
+  padding: 13px;
+}
+
+.recovery-panel p {
+  margin: 5px 0 0;
+  color: #49616c;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.recovery-actions {
+  justify-content: space-between;
+}
+
+.recovery-status {
+  color: #5f5755;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.recovery-status.running {
+  color: var(--ok);
+}
+
 .machine-health-heading {
   display: flex;
   justify-content: space-between;

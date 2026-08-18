@@ -8,6 +8,8 @@ const machineHealth = {
   zkteco: new Map(),
   hikvision: new Map()
 };
+const CURRENT_CONFIG_VERSION = 3;
+let hikvisionBackfillProcess = null;
 let mainWindow = null;
 let installingDependencies = false;
 let quitting = false;
@@ -18,9 +20,10 @@ if (!singleInstanceLock) {
 }
 
 const defaultConfig = {
+  configVersion: CURRENT_CONFIG_VERSION,
   backendUrl: "http://localhost:8080",
   bridgeToken: "",
-  autoStart: false,
+  autoStart: true,
   zkteco: {
     enabled: true,
     deviceIps: "10.10.4.40,10.10.4.41,10.10.4.42,10.10.4.43,10.10.4.46",
@@ -35,7 +38,7 @@ const defaultConfig = {
     enabled: true,
     cameraUrls: "http://10.10.4.101,http://10.10.4.102,http://10.10.4.103,http://10.10.4.104,http://10.10.4.105,http://10.10.4.106,http://10.10.4.107",
     username: "admin",
-    password: "Knack7788",
+    password: "",
     intervalSeconds: 5,
     lookbackMinutes: 60,
     maxResults: 30,
@@ -76,8 +79,15 @@ if (singleInstanceLock) {
   });
 
   app.whenReady().then(() => {
+    const config = loadConfig();
     createWindow();
-    applyAutoStart(loadConfig().autoStart);
+    applyAutoStart(config.autoStart);
+    if (config.autoStart) {
+      mainWindow.webContents.once("did-finish-load", () => {
+        emitLog("app", "Starting enabled bridges automatically.");
+        startConfiguredBridges(config);
+      });
+    }
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -93,6 +103,7 @@ app.on("before-quit", () => {
   quitting = true;
   stopBridge("zkteco");
   stopBridge("hikvision");
+  stopHikvisionBackfill();
 });
 
 function appRoot() {
@@ -149,7 +160,13 @@ function loadConfig() {
       return structuredClone(defaultConfig);
     }
     const raw = JSON.parse(fs.readFileSync(configPath(), "utf8"));
-    return mergeConfig(defaultConfig, raw);
+    const config = mergeConfig(defaultConfig, raw);
+    if (Number(raw.configVersion || 0) < CURRENT_CONFIG_VERSION) {
+      config.configVersion = CURRENT_CONFIG_VERSION;
+      config.autoStart = true;
+      fs.writeFileSync(configPath(), JSON.stringify(config, null, 2));
+    }
+    return config;
   } catch (error) {
     emitLog("app", `Could not read config: ${error.message}`);
     return structuredClone(defaultConfig);
@@ -158,6 +175,7 @@ function loadConfig() {
 
 function saveConfig(config) {
   const nextConfig = mergeConfig(defaultConfig, config || {});
+  nextConfig.configVersion = CURRENT_CONFIG_VERSION;
   fs.mkdirSync(path.dirname(configPath()), { recursive: true });
   fs.writeFileSync(configPath(), JSON.stringify(nextConfig, null, 2));
   applyAutoStart(nextConfig.autoStart);
@@ -191,7 +209,10 @@ function applyAutoStart(enabled) {
 }
 
 function isAnyBridgeRunning() {
-  return [...bridgeProcesses.values()].some((entry) => entry.process && !entry.process.killed);
+  return (
+    [...bridgeProcesses.values()].some((entry) => entry.process && !entry.process.killed) ||
+    Boolean(hikvisionBackfillProcess && !hikvisionBackfillProcess.killed)
+  );
 }
 
 function statusPayload() {
@@ -199,6 +220,7 @@ function statusPayload() {
   return {
     zkteco: Boolean(bridgeProcesses.get("zkteco")?.process),
     hikvision: Boolean(bridgeProcesses.get("hikvision")?.process),
+    hikvisionBackfill: Boolean(hikvisionBackfillProcess),
     installingDependencies,
     python: pythonExecutable(),
     appRoot: appRoot(),
@@ -425,6 +447,103 @@ function stopBridge(kind) {
   return statusPayload();
 }
 
+function startConfiguredBridges(configInput) {
+  const config = saveConfig(configInput || loadConfig());
+  if (config.zkteco.enabled) {
+    startBridge("zkteco", config);
+  }
+  if (config.hikvision.enabled) {
+    startBridge("hikvision", config);
+  }
+  return statusPayload();
+}
+
+function validateBackfillRange(range) {
+  const from = String(range?.from || "").trim();
+  const to = String(range?.to || "").trim();
+  const localDateTimePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/;
+  if (!localDateTimePattern.test(from) || !localDateTimePattern.test(to)) {
+    throw new Error("Select a valid recovery start and end date/time.");
+  }
+  if (from >= to) {
+    throw new Error("Recovery end time must be after the start time.");
+  }
+  return { from, to };
+}
+
+function startHikvisionBackfill(configInput, rangeInput) {
+  if (hikvisionBackfillProcess) {
+    throw new Error("A Hikvision recovery is already running.");
+  }
+
+  const config = saveConfig(configInput || loadConfig());
+  const range = validateBackfillRange(rangeInput);
+  if (!config.hikvision.enabled) {
+    throw new Error("Enable Hikvision before pulling missed events.");
+  }
+  if (!String(config.hikvision.cameraUrls || "").trim()) {
+    throw new Error("Configure at least one Hikvision camera URL.");
+  }
+  if (!String(config.backendUrl || "").trim() || !String(config.bridgeToken || "").trim()) {
+    throw new Error("Backend URL and bridge token are required.");
+  }
+
+  const script = path.join(workersDir(), "hikvision_bridge.py");
+  const child = spawn(pythonExecutable(), [script], {
+    cwd: appRoot(),
+    env: {
+      ...workerEnv("hikvision", config),
+      HIKVISION_BACKFILL_FROM: range.from,
+      HIKVISION_BACKFILL_TO: range.to
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  hikvisionBackfillProcess = child;
+  emitLog(
+    "hikvision-recovery",
+    `Pulling all configured cameras from ${range.from} to ${range.to} (Asia/Colombo).`
+  );
+  emitStatus();
+
+  child.stdout.on("data", (data) => {
+    splitLines(data).forEach((line) => emitLog("hikvision-recovery", line));
+  });
+  child.stderr.on("data", (data) => {
+    splitLines(data).forEach((line) => emitLog("hikvision-recovery", line));
+  });
+  child.on("error", (error) => {
+    if (hikvisionBackfillProcess === child) {
+      hikvisionBackfillProcess = null;
+    }
+    emitLog("hikvision-recovery", `Could not start recovery: ${error.message}`);
+    emitStatus();
+  });
+  child.on("exit", (code, signal) => {
+    if (hikvisionBackfillProcess === child) {
+      hikvisionBackfillProcess = null;
+    }
+    emitLog(
+      "hikvision-recovery",
+      signal ? `Recovery stopped by ${signal}.` : code === 0 ? "Recovery completed." : `Recovery failed with code ${code}.`
+    );
+    emitStatus();
+  });
+
+  return statusPayload();
+}
+
+function stopHikvisionBackfill() {
+  if (!hikvisionBackfillProcess) {
+    return statusPayload();
+  }
+  hikvisionBackfillProcess.kill();
+  hikvisionBackfillProcess = null;
+  emitLog("hikvision-recovery", "Stopping recovery.");
+  emitStatus();
+  return statusPayload();
+}
+
 function workerEnv(kind, config) {
   const env = {
     ...process.env,
@@ -516,20 +635,17 @@ ipcMain.handle("bridge:status", () => statusPayload());
 ipcMain.handle("bridge:start", (_event, kind, config) => startBridge(kind, config));
 ipcMain.handle("bridge:stop", (_event, kind) => stopBridge(kind));
 ipcMain.handle("bridge:startAll", (_event, config) => {
-  const saved = saveConfig(config);
-  if (saved.zkteco.enabled) {
-    startBridge("zkteco", saved);
-  }
-  if (saved.hikvision.enabled) {
-    startBridge("hikvision", saved);
-  }
-  return statusPayload();
+  return startConfiguredBridges(config);
 });
 ipcMain.handle("bridge:stopAll", () => {
   stopBridge("zkteco");
   stopBridge("hikvision");
+  stopHikvisionBackfill();
   return statusPayload();
 });
+ipcMain.handle("bridge:hikvisionBackfill", (_event, config, range) =>
+  startHikvisionBackfill(config, range)
+);
 ipcMain.handle("deps:install", () => installDependencies());
 ipcMain.handle("app:setAutoStart", (_event, enabled) => {
   const config = loadConfig();

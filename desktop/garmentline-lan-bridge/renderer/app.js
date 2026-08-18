@@ -17,7 +17,9 @@ const fields = {
   hikvisionInterval: document.querySelector("#hikvisionInterval"),
   hikvisionTimeout: document.querySelector("#hikvisionTimeout"),
   hikvisionLookback: document.querySelector("#hikvisionLookback"),
-  hikvisionMaxResults: document.querySelector("#hikvisionMaxResults")
+  hikvisionMaxResults: document.querySelector("#hikvisionMaxResults"),
+  hikvisionBackfillFrom: document.querySelector("#hikvisionBackfillFrom"),
+  hikvisionBackfillTo: document.querySelector("#hikvisionBackfillTo")
 };
 
 const buttons = {
@@ -30,6 +32,7 @@ const buttons = {
   stopZkteco: document.querySelector("#stopZkteco"),
   startHikvision: document.querySelector("#startHikvision"),
   stopHikvision: document.querySelector("#stopHikvision"),
+  pullHikvisionHistory: document.querySelector("#pullHikvisionHistory"),
   clearLog: document.querySelector("#clearLog"),
   openConfigFolder: document.querySelector("#openConfigFolder")
 };
@@ -40,6 +43,7 @@ const zktecoMachineSummary = document.querySelector("#zktecoMachineSummary");
 const hikvisionMachineSummary = document.querySelector("#hikvisionMachineSummary");
 const zktecoMachineList = document.querySelector("#zktecoMachineList");
 const hikvisionMachineList = document.querySelector("#hikvisionMachineList");
+const hikvisionBackfillStatus = document.querySelector("#hikvisionBackfillStatus");
 const pythonPath = document.querySelector("#pythonPath");
 const logOutput = document.querySelector("#logOutput");
 
@@ -48,6 +52,33 @@ let latestStatus = {};
 function numberValue(input, fallback) {
   const parsed = Number(input.value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function colomboDateTimeParts(value = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Colombo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(value);
+  const part = (type) => parts.find((item) => item.type === type)?.value || "";
+  return {
+    date: `${part("year")}-${part("month")}-${part("day")}`,
+    time: `${part("hour")}:${part("minute")}`
+  };
+}
+
+function setDefaultRecoveryRange() {
+  const current = colomboDateTimeParts();
+  if (!fields.hikvisionBackfillFrom.value) {
+    fields.hikvisionBackfillFrom.value = `${current.date}T00:00`;
+  }
+  if (!fields.hikvisionBackfillTo.value) {
+    fields.hikvisionBackfillTo.value = `${current.date}T${current.time}`;
+  }
 }
 
 function formConfig() {
@@ -230,6 +261,14 @@ function updateStatus(status) {
   buttons.stopZkteco.disabled = !latestStatus.zkteco;
   buttons.startHikvision.disabled = Boolean(latestStatus.hikvision);
   buttons.stopHikvision.disabled = !latestStatus.hikvision;
+  buttons.pullHikvisionHistory.disabled = Boolean(latestStatus.hikvisionBackfill);
+  buttons.pullHikvisionHistory.textContent = latestStatus.hikvisionBackfill
+    ? "Pulling Events..."
+    : "Pull Missed Events";
+  hikvisionBackfillStatus.textContent = latestStatus.hikvisionBackfill
+    ? "Recovery running"
+    : "Ready";
+  hikvisionBackfillStatus.classList.toggle("running", Boolean(latestStatus.hikvisionBackfill));
 }
 
 async function saveCurrentConfig() {
@@ -295,6 +334,25 @@ buttons.stopHikvision.addEventListener("click", () => {
   void runAction(buttons.stopHikvision, "Stopping", () => window.bridgeApp.stop("hikvision"));
 });
 
+buttons.pullHikvisionHistory.addEventListener("click", async () => {
+  try {
+    setBusy(buttons.pullHikvisionHistory, true, "Starting Recovery...");
+    const config = await saveCurrentConfig();
+    await window.bridgeApp.backfillHikvision(config, {
+      from: fields.hikvisionBackfillFrom.value,
+      to: fields.hikvisionBackfillTo.value
+    });
+    appendLog({
+      source: "app",
+      message: "Missed-event recovery started for all configured Hikvision cameras."
+    });
+  } catch (error) {
+    appendLog({ source: "app", message: error.message || String(error) });
+  } finally {
+    updateStatus(await window.bridgeApp.status());
+  }
+});
+
 buttons.clearLog.addEventListener("click", () => {
   logOutput.textContent = "";
 });
@@ -307,7 +365,9 @@ fields.autoStart.addEventListener("change", async () => {
   await window.bridgeApp.setAutoStart(fields.autoStart.checked);
   appendLog({
     source: "app",
-    message: fields.autoStart.checked ? "Open at login enabled." : "Open at login disabled."
+    message: fields.autoStart.checked
+      ? "Open and start bridges at login enabled."
+      : "Automatic login startup disabled."
   });
 });
 
@@ -316,6 +376,7 @@ window.bridgeApp.onStatus(updateStatus);
 
 async function init() {
   fillForm(await window.bridgeApp.getConfig());
+  setDefaultRecoveryRange();
   updateStatus(await window.bridgeApp.status());
   setInterval(async () => updateStatus(await window.bridgeApp.status()), 2500);
 }

@@ -37,7 +37,7 @@
             <h2>Cloud Backend</h2>
             <label class="switch-row">
               <input id="autoStart" type="checkbox" />
-              <span>Open at login</span>
+              <span>Open and start bridges at login</span>
             </label>
           </div>
           <label>
@@ -154,6 +154,28 @@
           <div class="button-row">
             <button id="startHikvision" type="button" class="button primary">Start Hikvision</button>
             <button id="stopHikvision" type="button" class="button secondary">Stop</button>
+          </div>
+          <div class="recovery-panel">
+            <div>
+              <h3>Recover Missed Face Events</h3>
+              <p>Pull retained events from every configured camera using Sri Lanka time.</p>
+            </div>
+            <div class="field-grid">
+              <label>
+                From
+                <input id="hikvisionBackfillFrom" type="datetime-local" step="60" />
+              </label>
+              <label>
+                To
+                <input id="hikvisionBackfillTo" type="datetime-local" step="60" />
+              </label>
+            </div>
+            <div class="button-row recovery-actions">
+              <button id="pullHikvisionHistory" type="button" class="button primary">
+                Pull Missed Events
+              </button>
+              <span id="hikvisionBackfillStatus" class="recovery-status">Ready</span>
+            </div>
           </div>
           <div class="machine-health" aria-live="polite">
             <div class="machine-health-heading">

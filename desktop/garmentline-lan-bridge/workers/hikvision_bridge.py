@@ -104,6 +104,21 @@ def parse_event_time(value: Any, timezone: ZoneInfo) -> datetime:
     return parsed.astimezone(timezone)
 
 
+def parse_requested_time(value: str, timezone: ZoneInfo) -> datetime:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError("A date and time are required.")
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise ValueError(f"Invalid date and time: {value}") from exc
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone)
+    return parsed.astimezone(timezone)
+
+
 def first_text(source: dict[str, Any], *names: str) -> str | None:
     for name in names:
         value = source.get(name)
@@ -218,23 +233,39 @@ def heartbeat_event(camera_url: str, timezone: ZoneInfo) -> dict[str, Any]:
     }
 
 
-def fetch_events(camera_url: str, timezone: ZoneInfo) -> list[dict[str, Any]]:
+def event_info_list(data: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    event_response = data.get("AcsEvent") or {}
+    if not isinstance(event_response, dict):
+        return [], {}
+    info_list = event_response.get("InfoList") or []
+    if isinstance(info_list, dict):
+        info_list = [info_list]
+    if not isinstance(info_list, list):
+        return [], event_response
+    return [node for node in info_list if isinstance(node, dict)], event_response
+
+
+def fetch_event_page(
+    camera_url: str,
+    timezone: ZoneInfo,
+    start: datetime,
+    end: datetime,
+    search_id: str,
+    position: int,
+    page_size: int,
+) -> tuple[list[dict[str, Any]], int, int | None, str]:
     username = os.environ.get("HIKVISION_USERNAME", "")
     password = os.environ.get("HIKVISION_PASSWORD", "")
     timeout = env_int("HIKVISION_TIMEOUT_SECONDS", 10)
-    lookback_minutes = env_int("HIKVISION_LOOKBACK_MINUTES", 60)
-    max_results = env_int("HIKVISION_MAX_RESULTS", 30)
-    now = datetime.now(tz=timezone)
-    start = now - timedelta(minutes=max(1, lookback_minutes))
     payload = {
         "AcsEventCond": {
-            "searchID": "garmentline-desktop-bridge-" + camera_id(camera_url),
-            "searchResultPosition": 0,
-            "maxResults": max(1, max_results),
+            "searchID": search_id,
+            "searchResultPosition": max(0, position),
+            "maxResults": max(1, page_size),
             "major": 0,
             "minor": 0,
             "startTime": hikvision_time(start),
-            "endTime": hikvision_time(now),
+            "endTime": hikvision_time(end),
             "timeReverseOrder": True,
         }
     }
@@ -246,14 +277,78 @@ def fetch_events(camera_url: str, timezone: ZoneInfo) -> list[dict[str, Any]]:
     )
     response.raise_for_status()
     data = response.json()
-    info_list = data.get("AcsEvent", {}).get("InfoList") or []
+    info_list, event_response = event_info_list(data)
     normalized: list[dict[str, Any]] = []
     for node in info_list:
-        if isinstance(node, dict):
-            event = normalize_event(camera_url, node, timezone)
-            if event:
-                normalized.append(event)
-    return normalized
+        event = normalize_event(camera_url, node, timezone)
+        if event:
+            normalized.append(event)
+
+    total_matches = int_or_none(event_response.get("totalMatches"))
+    response_status = str(event_response.get("responseStatusStrg") or "").strip().upper()
+    return normalized, len(info_list), total_matches, response_status
+
+
+def fetch_events(camera_url: str, timezone: ZoneInfo) -> list[dict[str, Any]]:
+    lookback_minutes = env_int("HIKVISION_LOOKBACK_MINUTES", 60)
+    page_size = max(1, env_int("HIKVISION_MAX_RESULTS", 30))
+    end = datetime.now(tz=timezone)
+    start = end - timedelta(minutes=max(1, lookback_minutes))
+    events, _, _, _ = fetch_event_page(
+        camera_url,
+        timezone,
+        start,
+        end,
+        "lm-live-" + uuid.uuid4().hex[:20],
+        0,
+        page_size,
+    )
+    return events
+
+
+def fetch_events_for_range(
+    camera_url: str,
+    timezone: ZoneInfo,
+    start: datetime,
+    end: datetime,
+) -> list[dict[str, Any]]:
+    page_size = max(1, env_int("HIKVISION_MAX_RESULTS", 30))
+    max_events = max(page_size, env_int("HIKVISION_BACKFILL_MAX_EVENTS_PER_SLICE", 10_000))
+    search_id = "lm-backfill-" + uuid.uuid4().hex[:16]
+    position = 0
+    events_by_id: dict[str, dict[str, Any]] = {}
+
+    while position < max_events:
+        events, raw_count, total_matches, response_status = fetch_event_page(
+            camera_url,
+            timezone,
+            start,
+            end,
+            search_id,
+            position,
+            page_size,
+        )
+        for event in events:
+            events_by_id[event["id"]] = event
+
+        if raw_count <= 0:
+            break
+
+        position += raw_count
+        if total_matches is not None and position >= total_matches:
+            break
+        if raw_count < page_size:
+            break
+        if response_status and response_status not in {"MORE", "OK"}:
+            break
+
+    if position >= max_events and (total_matches is None or position < total_matches):
+        raise RuntimeError(
+            f"More than {max_events} events were returned in one recovery slice; "
+            "use a shorter time range or increase HIKVISION_BACKFILL_MAX_EVENTS_PER_SLICE."
+        )
+
+    return sorted(events_by_id.values(), key=lambda event: event["eventTime"])
 
 
 def post_events(endpoint: str, token: str, payload: list[dict[str, Any]]):
@@ -310,8 +405,87 @@ def run_once(state: dict[str, Any]):
         log(f"{camera_url}: posted {result.get('accepted', len(pending))} face events.")
 
 
-def main():
+def run_backfill(start: datetime, end: datetime, timezone: ZoneInfo) -> int:
+    endpoint = backend_endpoint()
+    token = os.environ.get("BRIDGE_SHARED_TOKEN", "")
+    if not endpoint:
+        raise RuntimeError("Hikvision backend URL is empty.")
+    if not token:
+        raise RuntimeError("Bridge token is empty.")
+    if end <= start:
+        raise ValueError("Recovery end time must be after the start time.")
+
+    camera_urls = split_values(os.environ.get("HIKVISION_CAMERA_URLS", ""))
+    if not camera_urls:
+        raise RuntimeError("No Hikvision camera URLs are configured.")
+
+    batch_size = max(1, env_int("HIKVISION_MAX_RESULTS", 30))
+    slice_minutes = max(1, env_int("HIKVISION_BACKFILL_SLICE_MINUTES", 60))
+    total_found = 0
+    total_accepted = 0
+    failures = 0
+    log(
+        f"Recovery started for {len(camera_urls)} camera(s) from "
+        f"{start.isoformat()} to {end.isoformat()}."
+    )
+
+    for camera_index, camera_url in enumerate(camera_urls, start=1):
+        camera_found = 0
+        camera_accepted = 0
+        seen_event_ids: set[str] = set()
+        cursor = start
+        log(f"Recovery camera {camera_index}/{len(camera_urls)} {camera_url}: started.")
+        try:
+            while cursor < end:
+                slice_end = min(cursor + timedelta(minutes=slice_minutes), end)
+                events = fetch_events_for_range(camera_url, timezone, cursor, slice_end)
+                unique_events = [event for event in events if event["id"] not in seen_event_ids]
+                seen_event_ids.update(event["id"] for event in unique_events)
+                camera_found += len(unique_events)
+
+                for batch_start in range(0, len(unique_events), batch_size):
+                    batch = unique_events[batch_start : batch_start + batch_size]
+                    result = post_events(endpoint, token, batch)
+                    camera_accepted += int(result.get("accepted", 0))
+
+                log(
+                    f"Recovery {camera_url}: {cursor.isoformat()} to {slice_end.isoformat()}, "
+                    f"found {len(unique_events)} event(s)."
+                )
+                cursor = slice_end
+
+            log(
+                f"Recovery {camera_url}: complete, found {camera_found}, "
+                f"backend accepted {camera_accepted}."
+            )
+        except Exception as exc:
+            failures += 1
+            log(f"Recovery {camera_url}: failed: {exc}")
+
+        total_found += camera_found
+        total_accepted += camera_accepted
+
+    log(
+        f"Recovery complete: found {total_found} event(s), backend accepted "
+        f"{total_accepted}, camera failures {failures}."
+    )
+    return 1 if failures else 0
+
+
+def main() -> int:
     interval = env_int("HIKVISION_INTERVAL_SECONDS", 5)
+    timezone = ZoneInfo(os.environ.get("BRIDGE_TIME_ZONE", "Asia/Colombo"))
+    backfill_from = os.environ.get("HIKVISION_BACKFILL_FROM", "").strip()
+    backfill_to = os.environ.get("HIKVISION_BACKFILL_TO", "").strip()
+    if backfill_from or backfill_to:
+        if not backfill_from or not backfill_to:
+            raise ValueError("Both recovery start and end times are required.")
+        return run_backfill(
+            parse_requested_time(backfill_from, timezone),
+            parse_requested_time(backfill_to, timezone),
+            timezone,
+        )
+
     state = load_state()
     log("Hikvision bridge worker started.")
     while RUNNING:
@@ -321,10 +495,11 @@ def main():
                 break
             time.sleep(1)
     log("Hikvision bridge worker stopped.")
+    return 0
 
 
 if __name__ == "__main__":
     try:
-        main()
+        raise SystemExit(main())
     except KeyboardInterrupt:
         sys.exit(0)

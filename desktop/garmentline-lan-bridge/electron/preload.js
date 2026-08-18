@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld("bridgeApp", {
   stop: (kind) => ipcRenderer.invoke("bridge:stop", kind),
   startAll: (config) => ipcRenderer.invoke("bridge:startAll", config),
   stopAll: () => ipcRenderer.invoke("bridge:stopAll"),
+  backfillHikvision: (config, range) =>
+    ipcRenderer.invoke("bridge:hikvisionBackfill", config, range),
   installDependencies: () => ipcRenderer.invoke("deps:install"),
   setAutoStart: (enabled) => ipcRenderer.invoke("app:setAutoStart", enabled),
   openUserData: () => ipcRenderer.invoke("app:openUserData"),
