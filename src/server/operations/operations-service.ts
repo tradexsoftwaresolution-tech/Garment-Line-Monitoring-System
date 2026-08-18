@@ -1189,6 +1189,7 @@ export async function listActiveAppUsers(client: AppSupabaseClient) {
 export async function getOperationsSnapshot(
   client: AppSupabaseClient,
   options: {
+    attendanceDate?: string;
     includeAuditLogs?: boolean;
     includeEmployeeNotes?: boolean;
     includeSystemSettings?: boolean;
@@ -1338,11 +1339,8 @@ export async function getOperationsSnapshot(
   });
 
   const currentDate = currentAttendanceDate();
-  const latestDataAttendanceDate = reconciliationRows[0]?.attendance_date;
-  const latestAttendanceDate =
-    latestDataAttendanceDate && latestDataAttendanceDate <= currentDate
-      ? latestDataAttendanceDate
-      : currentDate;
+  const requestedAttendanceDate = cleanText(options.attendanceDate);
+  const latestAttendanceDate = requestedAttendanceDate || currentDate;
   const currentReconciliationRows = reconciliationRows.filter(
     (row) => row.attendance_date === latestAttendanceDate
   );

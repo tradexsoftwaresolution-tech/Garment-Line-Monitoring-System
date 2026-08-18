@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.garmentline.operations.supabase.SupabaseAdminClient;
 import com.garmentline.operations.support.JsonSupport;
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -134,68 +133,14 @@ public class PublicDashboardService {
 
   private LocalDate requestedAttendanceDate(String requestedAttendanceDate) {
     if (!hasText(requestedAttendanceDate)) {
-      return latestAttendanceDate();
+      return LocalDate.now(ATTENDANCE_ZONE);
     }
 
     try {
       return LocalDate.parse(requestedAttendanceDate.trim());
     } catch (RuntimeException ignored) {
-      return latestAttendanceDate();
+      return LocalDate.now(ATTENDANCE_ZONE);
     }
-  }
-
-  private LocalDate latestAttendanceDate() {
-    LocalDate current = LocalDate.now(ATTENDANCE_ZONE);
-    LocalDate latest = null;
-
-    LocalDate canonicalLatest = latestDateFrom("attendance_reconciliation", "attendance_date");
-    if (canonicalLatest != null && !canonicalLatest.isAfter(current)) {
-      return canonicalLatest;
-    }
-
-    latest = newestDate(latest, canonicalLatest);
-    latest = newestDate(latest, latestDateFrom("zkteco_fingerprint_events", "attendance_date"));
-    latest = newestDate(latest, latestHikvisionDate());
-
-    return latest == null || latest.isAfter(current) ? current : latest;
-  }
-
-  private LocalDate latestDateFrom(String table, String field) {
-    List<JsonNode> rows = rows(select(table, Map.of(), field + ".desc", 1));
-    String value = rows.isEmpty() ? null : text(rows.get(0), field);
-    if (!hasText(value)) {
-      return null;
-    }
-
-    try {
-      return LocalDate.parse(value);
-    } catch (RuntimeException ignored) {
-      return null;
-    }
-  }
-
-  private LocalDate latestHikvisionDate() {
-    List<JsonNode> rows = rows(select("hikvision_face_events", Map.of(), "event_time.desc", 1));
-    String value = rows.isEmpty() ? null : text(rows.get(0), "event_time");
-    if (!hasText(value)) {
-      return null;
-    }
-
-    try {
-      return OffsetDateTime.parse(value).atZoneSameInstant(ATTENDANCE_ZONE).toLocalDate();
-    } catch (RuntimeException ignored) {
-      return null;
-    }
-  }
-
-  private LocalDate newestDate(LocalDate left, LocalDate right) {
-    if (right == null) {
-      return left;
-    }
-    if (left == null || right.isAfter(left)) {
-      return right;
-    }
-    return left;
   }
 
   private Map<String, Object> workerSnapshot(

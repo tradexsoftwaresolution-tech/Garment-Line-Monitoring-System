@@ -310,7 +310,7 @@ export function IeFullDashboardPage() {
   const detailPanelRef = useRef<HTMLElement | null>(null);
 
   const greeting = useMemo(() => getAntonioGreeting(currentTime), [currentTime]);
-  const todayInputValue = useMemo(() => formatDateInput(new Date()), []);
+  const todayInputValue = useMemo(() => formatDateInput(currentTime), [currentTime]);
 
   const lineRows = useMemo(
     () =>
@@ -749,7 +749,11 @@ export function IeFullDashboardPage() {
                 type="date"
                 value={selectedAttendanceDate || attendanceOverview.attendanceDate || ""}
                 max={todayInputValue}
-                onChange={(event) => setSelectedAttendanceDate(event.target.value)}
+                onChange={(event) =>
+                  setSelectedAttendanceDate(
+                    event.target.value === todayInputValue ? "" : event.target.value
+                  )
+                }
                 aria-label="Attendance date"
               />
             </label>

@@ -79,13 +79,15 @@ export function usePublicExclusiveDashboardSnapshot(
     try {
       const nextSnapshot = isBackendConfigured()
         ? await getPublicExclusiveDashboardSnapshotFromBackend(attendanceDate)
-        : await getPublicExclusiveDashboardSnapshotFromSupabase();
+        : await getPublicExclusiveDashboardSnapshotFromSupabase(attendanceDate);
       setSnapshot(nextSnapshot);
       setError(null);
     } catch (requestError) {
       if (isBackendConfigured()) {
         try {
-          const fallbackSnapshot = await getPublicExclusiveDashboardSnapshotFromSupabase();
+          const fallbackSnapshot = await getPublicExclusiveDashboardSnapshotFromSupabase(
+            attendanceDate
+          );
           setSnapshot(fallbackSnapshot);
           setError(null);
           return;
@@ -116,7 +118,7 @@ export function usePublicExclusiveDashboardSnapshot(
   return { snapshot, isLoading, error, refresh };
 }
 
-async function getPublicExclusiveDashboardSnapshotFromSupabase() {
+async function getPublicExclusiveDashboardSnapshotFromSupabase(attendanceDate?: string) {
   const client = getSupabaseBrowserClient();
 
   if (!client) {
@@ -124,6 +126,7 @@ async function getPublicExclusiveDashboardSnapshotFromSupabase() {
   }
 
   return getOperationsSnapshot(client, {
+    attendanceDate,
     includeAuditLogs: false,
     includeEmployeeNotes: false,
     includeSystemSettings: false,
