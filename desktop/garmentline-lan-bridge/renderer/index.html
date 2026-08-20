@@ -158,9 +158,15 @@
           <div class="recovery-panel">
             <div>
               <h3>Recover Missed Face Events</h3>
-              <p>Pull retained events from every configured camera using Sri Lanka time.</p>
+              <p>Pull retained events from one camera or all configured cameras using Sri Lanka time.</p>
             </div>
             <div class="field-grid">
+              <label class="recovery-camera-field">
+                Camera
+                <select id="hikvisionBackfillCamera">
+                  <option value="">All configured cameras</option>
+                </select>
+              </label>
               <label>
                 From
                 <input id="hikvisionBackfillFrom" type="datetime-local" step="60" />

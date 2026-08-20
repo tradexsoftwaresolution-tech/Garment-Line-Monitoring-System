@@ -458,7 +458,7 @@ function startConfiguredBridges(configInput) {
   return statusPayload();
 }
 
-function validateBackfillRange(range) {
+function validateBackfillRequest(range, config) {
   const from = String(range?.from || "").trim();
   const to = String(range?.to || "").trim();
   const localDateTimePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/;
@@ -468,7 +468,15 @@ function validateBackfillRange(range) {
   if (from >= to) {
     throw new Error("Recovery end time must be after the start time.");
   }
-  return { from, to };
+
+  const configuredCameraUrls = splitConfiguredValues(config.hikvision?.cameraUrls, {
+    trimTrailingSlash: true
+  });
+  const requestedCameraUrl = normalizeMachineId("hikvision", range?.cameraUrl);
+  if (requestedCameraUrl && !configuredCameraUrls.includes(requestedCameraUrl)) {
+    throw new Error("The selected camera is not in the configured Hikvision camera list.");
+  }
+  return { from, to, cameraUrl: requestedCameraUrl };
 }
 
 function startHikvisionBackfill(configInput, rangeInput) {
@@ -477,7 +485,7 @@ function startHikvisionBackfill(configInput, rangeInput) {
   }
 
   const config = saveConfig(configInput || loadConfig());
-  const range = validateBackfillRange(rangeInput);
+  const range = validateBackfillRequest(rangeInput, config);
   if (!config.hikvision.enabled) {
     throw new Error("Enable Hikvision before pulling missed events.");
   }
@@ -494,7 +502,8 @@ function startHikvisionBackfill(configInput, rangeInput) {
     env: {
       ...workerEnv("hikvision", config),
       HIKVISION_BACKFILL_FROM: range.from,
-      HIKVISION_BACKFILL_TO: range.to
+      HIKVISION_BACKFILL_TO: range.to,
+      HIKVISION_BACKFILL_CAMERA_URLS: range.cameraUrl
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -502,7 +511,7 @@ function startHikvisionBackfill(configInput, rangeInput) {
   hikvisionBackfillProcess = child;
   emitLog(
     "hikvision-recovery",
-    `Pulling all configured cameras from ${range.from} to ${range.to} (Asia/Colombo).`
+    `Pulling ${range.cameraUrl || "all configured cameras"} from ${range.from} to ${range.to} (Asia/Colombo).`
   );
   emitStatus();
 

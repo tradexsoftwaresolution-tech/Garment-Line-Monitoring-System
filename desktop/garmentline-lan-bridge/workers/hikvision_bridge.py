@@ -405,6 +405,19 @@ def run_once(state: dict[str, Any]):
         log(f"{camera_url}: posted {result.get('accepted', len(pending))} face events.")
 
 
+def backfill_camera_urls() -> list[str]:
+    configured = split_values(os.environ.get("HIKVISION_CAMERA_URLS", ""))
+    selected = split_values(os.environ.get("HIKVISION_BACKFILL_CAMERA_URLS", ""))
+    if not selected:
+        return configured
+
+    configured_set = set(configured)
+    invalid = [camera_url for camera_url in selected if camera_url not in configured_set]
+    if invalid:
+        raise ValueError("Recovery camera is not in the configured Hikvision camera list.")
+    return selected
+
+
 def run_backfill(start: datetime, end: datetime, timezone: ZoneInfo) -> int:
     endpoint = backend_endpoint()
     token = os.environ.get("BRIDGE_SHARED_TOKEN", "")
@@ -415,7 +428,7 @@ def run_backfill(start: datetime, end: datetime, timezone: ZoneInfo) -> int:
     if end <= start:
         raise ValueError("Recovery end time must be after the start time.")
 
-    camera_urls = split_values(os.environ.get("HIKVISION_CAMERA_URLS", ""))
+    camera_urls = backfill_camera_urls()
     if not camera_urls:
         raise RuntimeError("No Hikvision camera URLs are configured.")
 

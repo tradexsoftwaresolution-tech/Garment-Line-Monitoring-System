@@ -35,7 +35,8 @@ body {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -271,7 +272,8 @@ label {
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   border: 1px solid #d6cfcb;
   border-radius: 8px;
@@ -291,7 +293,8 @@ textarea {
 }
 
 input:focus,
-textarea:focus {
+textarea:focus,
+select:focus {
   border-color: var(--red);
   box-shadow: 0 0 0 3px rgba(215, 25, 32, 0.13);
 }
@@ -376,6 +379,10 @@ textarea:focus {
 
 .recovery-actions {
   justify-content: space-between;
+}
+
+.recovery-camera-field {
+  grid-column: 1 / -1;
 }
 
 .recovery-status {

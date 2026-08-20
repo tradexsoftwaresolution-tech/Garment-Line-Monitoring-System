@@ -43,6 +43,7 @@ class HikvisionBridgeTest(unittest.TestCase):
         CAPTURED_REQUESTS.clear()
         os.environ["HIKVISION_MAX_RESULTS"] = "2"
         os.environ["HIKVISION_BACKFILL_MAX_EVENTS_PER_SLICE"] = "20"
+        os.environ.pop("HIKVISION_BACKFILL_CAMERA_URLS", None)
         self.timezone = ZoneInfo("Asia/Colombo")
         self.start = datetime(2026, 8, 18, 8, 0, tzinfo=self.timezone)
         self.end = datetime(2026, 8, 18, 9, 0, tzinfo=self.timezone)
@@ -108,6 +109,20 @@ class HikvisionBridgeTest(unittest.TestCase):
         self.assertEqual(
             [event["id"] for event in events],
             ["event-1", "event-2", "event-3", "event-4", "event-5"],
+        )
+
+    def test_backfill_camera_selection_supports_one_or_all_configured_cameras(self):
+        os.environ["HIKVISION_CAMERA_URLS"] = (
+            "http://10.10.4.101,http://10.10.4.102,http://10.10.4.103"
+        )
+        self.assertEqual(
+            hikvision_bridge.backfill_camera_urls(),
+            ["http://10.10.4.101", "http://10.10.4.102", "http://10.10.4.103"],
+        )
+
+        os.environ["HIKVISION_BACKFILL_CAMERA_URLS"] = "http://10.10.4.102"
+        self.assertEqual(
+            hikvision_bridge.backfill_camera_urls(), ["http://10.10.4.102"]
         )
 
 

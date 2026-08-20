@@ -18,6 +18,7 @@ const fields = {
   hikvisionTimeout: document.querySelector("#hikvisionTimeout"),
   hikvisionLookback: document.querySelector("#hikvisionLookback"),
   hikvisionMaxResults: document.querySelector("#hikvisionMaxResults"),
+  hikvisionBackfillCamera: document.querySelector("#hikvisionBackfillCamera"),
   hikvisionBackfillFrom: document.querySelector("#hikvisionBackfillFrom"),
   hikvisionBackfillTo: document.querySelector("#hikvisionBackfillTo")
 };
@@ -79,6 +80,42 @@ function setDefaultRecoveryRange() {
   if (!fields.hikvisionBackfillTo.value) {
     fields.hikvisionBackfillTo.value = `${current.date}T${current.time}`;
   }
+}
+
+function configuredHikvisionCameraUrls() {
+  return fields.hikvisionCameraUrls.value
+    .replace(/\r?\n/g, ",")
+    .split(",")
+    .map((value) => value.trim().replace(/\/+$/, ""))
+    .filter(Boolean);
+}
+
+function cameraOptionLabel(cameraUrl) {
+  try {
+    return new URL(cameraUrl).hostname || cameraUrl;
+  } catch (_error) {
+    return cameraUrl;
+  }
+}
+
+function refreshHikvisionRecoveryCameraOptions() {
+  const previousValue = fields.hikvisionBackfillCamera.value;
+  const cameraUrls = [...new Set(configuredHikvisionCameraUrls())];
+  const allOption = document.createElement("option");
+  allOption.value = "";
+  allOption.textContent = `All configured cameras (${cameraUrls.length})`;
+  fields.hikvisionBackfillCamera.replaceChildren(allOption);
+
+  cameraUrls.forEach((cameraUrl) => {
+    const option = document.createElement("option");
+    option.value = cameraUrl;
+    option.textContent = `${cameraOptionLabel(cameraUrl)} — ${cameraUrl}`;
+    fields.hikvisionBackfillCamera.append(option);
+  });
+
+  fields.hikvisionBackfillCamera.value = cameraUrls.includes(previousValue)
+    ? previousValue
+    : "";
 }
 
 function formConfig() {
@@ -339,12 +376,14 @@ buttons.pullHikvisionHistory.addEventListener("click", async () => {
     setBusy(buttons.pullHikvisionHistory, true, "Starting Recovery...");
     const config = await saveCurrentConfig();
     await window.bridgeApp.backfillHikvision(config, {
+      cameraUrl: fields.hikvisionBackfillCamera.value,
       from: fields.hikvisionBackfillFrom.value,
       to: fields.hikvisionBackfillTo.value
     });
+    const selectedCamera = fields.hikvisionBackfillCamera.selectedOptions[0]?.textContent;
     appendLog({
       source: "app",
-      message: "Missed-event recovery started for all configured Hikvision cameras."
+      message: `Missed-event recovery started for ${selectedCamera || "all configured cameras"}.`
     });
   } catch (error) {
     appendLog({ source: "app", message: error.message || String(error) });
@@ -371,11 +410,14 @@ fields.autoStart.addEventListener("change", async () => {
   });
 });
 
+fields.hikvisionCameraUrls.addEventListener("input", refreshHikvisionRecoveryCameraOptions);
+
 window.bridgeApp.onLog(appendLog);
 window.bridgeApp.onStatus(updateStatus);
 
 async function init() {
   fillForm(await window.bridgeApp.getConfig());
+  refreshHikvisionRecoveryCameraOptions();
   setDefaultRecoveryRange();
   updateStatus(await window.bridgeApp.status());
   setInterval(async () => updateStatus(await window.bridgeApp.status()), 2500);
